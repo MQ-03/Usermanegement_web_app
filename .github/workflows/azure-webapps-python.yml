@@ -7,11 +7,8 @@ on:
 
 # ── Set these for your environment ───────────────────────────────────────────
 env:
-  AZURE_WEBAPP_NAME: UserMan          # App Service name (without .azurewebsites.net)
+  AZURE_WEBAPP_NAME: mizbeeum          # App Service name (without .azurewebsites.net)
   PYTHON_VERSION: '3.13'
-
-permissions:
-  contents: read
 
 jobs:
   deploy:
@@ -19,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ env.PYTHON_VERSION }}
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
