@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in — User Management</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+  <style>
+    body {
+      background: #1a1d23;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .login-card {
+      width: 100%;
+      max-width: 380px;
+      border: none;
+      border-radius: 14px;
+      box-shadow: 0 8px 40px rgba(0,0,0,.35);
+    }
+    .brand {
+      font-weight: 700;
+      letter-spacing: .5px;
+    }
+    .brand-icon {
+      width: 54px; height: 54px; border-radius: 12px;
+      background: #0d6efd; color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.6rem; margin: 0 auto 1rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="card login-card p-4">
+    <div class="card-body">
+      {% if logo_url %}
+      <div class="text-center mb-3"><img src="{{ logo_url }}" alt="Logo" style="max-height:56px;max-width:220px;object-fit:contain"></div>
+      {% else %}
+      <div class="brand-icon"><i class="bi bi-people-fill"></i></div>
+      {% endif %}
+      <h5 class="text-center brand mb-1">User Management</h5>
+      <p class="text-center text-muted small mb-4">Tryzens IT Operations</p>
+
+      {% if error %}
+      <div class="alert alert-danger py-2 small">{{ error }}</div>
+      {% endif %}
+
+      {% if sso %}
+      <a href="{{ url_for('auth_login', next=next) }}" class="btn btn-primary w-100">
+        <i class="bi bi-microsoft me-2"></i>Sign in with Microsoft
+      </a>
+      <p class="text-center text-muted small mt-2 mb-0">Use your organisation account.</p>
+      {% endif %}
+
+      {% if sso and local %}
+      <div class="d-flex align-items-center my-3 text-muted small">
+        <hr class="flex-grow-1 my-0" />
+        <span class="px-2">or admin sign-in</span>
+        <hr class="flex-grow-1 my-0" />
+      </div>
+      {% endif %}
+
+      {% if local %}
+      <form method="POST" autocomplete="off">
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Username</label>
+          <div class="input-group">
+            <span class="input-group-text"><i class="bi bi-person"></i></span>
+            <input type="text" name="username" class="form-control" {% if not sso %}autofocus{% endif %} required />
+          </div>
+        </div>
+        <div class="mb-4">
+          <label class="form-label small fw-semibold">Password</label>
+          <div class="input-group">
+            <span class="input-group-text"><i class="bi bi-lock"></i></span>
+            <input type="password" name="password" class="form-control" required />
+          </div>
+        </div>
+        <button type="submit" class="btn {% if sso %}btn-outline-primary{% else %}btn-primary{% endif %} w-100">
+          <i class="bi bi-box-arrow-in-right me-1"></i>Sign in{% if sso %} as admin{% endif %}
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>

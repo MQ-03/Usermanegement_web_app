@@ -1,0 +1,2273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>User Management — Tryzens</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+  <style>
+    :root { --brand: #0d6efd; }
+    body { background: #f0f2f5; }
+    .navbar { background: #1a1d23 !important; }
+    .navbar-brand { font-weight: 700; letter-spacing: .5px; }
+
+    .stat-card { border: none; border-radius: 12px; }
+    .stat-card .icon-wrap {
+      width: 48px; height: 48px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center; font-size: 1.4rem;
+    }
+
+    .main-card { border: none; border-radius: 14px; box-shadow: 0 2px 16px rgba(0,0,0,.07); }
+
+    .nav-tabs .nav-link { color: #555; border: none; padding: .6rem 1.2rem; }
+    .nav-tabs .nav-link.active { color: var(--brand); font-weight: 600; border-bottom: 2px solid var(--brand); background: transparent; }
+
+    .table th { font-size: .78rem; text-transform: uppercase; letter-spacing: .6px; color: #888; font-weight: 600; border-top: none; }
+    .table td { vertical-align: middle; font-size: .9rem; }
+    .table tbody tr:hover { background: #f8f9ff; }
+
+    .badge-active   { background: #d1fae5; color: #065f46; }
+    .badge-off      { background: #fee2e2; color: #991b1b; }
+    .badge-ad       { background: #dbeafe; color: #1e40af; }
+    .badge-security { background: #ede9fe; color: #5b21b6; }
+    .badge-dist     { background: #fef3c7; color: #92400e; }
+
+    .search-wrap { position: relative; }
+    .search-wrap .bi-search { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #aaa; }
+    .search-wrap input { padding-left: 32px; }
+
+    .act-onboarded  { background:#dbeafe; color:#1e40af; }
+    .act-offboarded { background:#fee2e2; color:#991b1b; }
+    .act-deleted    { background:#fef3c7; color:#92400e; }
+    .act-other      { background:#e5e7eb; color:#374151; }
+
+    .empty-state { padding: 3rem 0; text-align: center; color: #aaa; }
+    .empty-state i { font-size: 2.5rem; display: block; margin-bottom: .5rem; }
+
+    .conn-dot { font-size: .55rem; vertical-align: middle; }
+    .conn-dot.ok   { color: #4ade80; }
+    .conn-dot.fail { color: #f87171; }
+    .conn-dot.unk  { color: #94a3b8; }
+
+    .sub-tabs .nav-link { font-size: .85rem; padding: .4rem .9rem; }
+
+    .license-card { border: none; border-radius: 10px; background: white; }
+    .license-card .usage-bar { height: 6px; border-radius: 3px; background: #e5e7eb; overflow: hidden; }
+    .license-card .usage-fill { height: 100%; background: var(--brand); transition: width .3s; }
+
+    /* ── Dark theme overrides for the app's custom (hardcoded) colors ── */
+    [data-bs-theme="dark"] body { background: #0d0f13; }
+    [data-bs-theme="dark"] .nav-tabs .nav-link { color: #9aa0aa; }
+    [data-bs-theme="dark"] .table th { color: #8b909a; }
+    [data-bs-theme="dark"] .table tbody tr:hover { background: rgba(255,255,255,.06); }
+    [data-bs-theme="dark"] .license-card { background: #1c1f26; }
+    [data-bs-theme="dark"] .license-card .usage-bar { background: #343a44; }
+    [data-bs-theme="dark"] .bg-light { background-color: #262a32 !important; }
+    [data-bs-theme="dark"] #ob-groups-list { background: #1c1f26 !important; }
+    [data-bs-theme="dark"] #logoPreviewBox { background: #262a32 !important; }
+  </style>
+  <script>
+    // Apply the saved theme before paint to avoid a flash of the wrong theme.
+    (function () {
+      var mode = localStorage.getItem("theme") || "system";
+      var dark = mode === "dark" ||
+                 (mode === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.setAttribute("data-bs-theme", dark ? "dark" : "light");
+    })();
+  </script>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar navbar-dark navbar-expand-lg px-4">
+  <span class="navbar-brand">
+    {% if logo_url %}<img src="{{ logo_url }}" alt="Logo" style="height:30px;max-width:160px;object-fit:contain" class="me-2">{% else %}<i class="bi bi-people-fill me-2"></i>{% endif %}User Management
+  </span>
+  <span class="ms-auto d-flex align-items-center gap-3">
+    <span class="text-white-50 small" id="adStatusLabel" title="Active Directory">
+      <i class="bi bi-circle-fill conn-dot unk" id="adDot"></i> Local-AD
+    </span>
+    <span class="text-white-50 small" id="graphStatusLabel" title="Microsoft Graph">
+      <i class="bi bi-circle-fill conn-dot unk" id="graphDot"></i> Entra-ID
+    </span>
+    <span class="text-white-50 small"><i class="bi bi-person-circle me-1"></i>{{ current_user }}</span>
+    <button class="btn btn-sm btn-outline-light" id="btnSettings" title="Settings"><i class="bi bi-gear"></i></button>
+    <a href="/logout" class="btn btn-sm btn-outline-light" title="Sign out"><i class="bi bi-box-arrow-right me-1"></i>Logout</a>
+  </span>
+</nav>
+
+<div class="container-fluid px-4 py-4">
+
+  <!-- Stats Row -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="card stat-card p-3">
+        <div class="d-flex align-items-center gap-3">
+          <div class="icon-wrap" style="background:#dbeafe"><i class="bi bi-people text-primary"></i></div>
+          <div><div class="fw-bold fs-4" id="statTotal">—</div><div class="text-muted small">Total Users</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card stat-card p-3">
+        <div class="d-flex align-items-center gap-3">
+          <div class="icon-wrap" style="background:#d1fae5"><i class="bi bi-person-check text-success"></i></div>
+          <div><div class="fw-bold fs-4" id="statActive">—</div><div class="text-muted small">Active</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card stat-card p-3">
+        <div class="d-flex align-items-center gap-3">
+          <div class="icon-wrap" style="background:#fee2e2"><i class="bi bi-person-dash text-danger"></i></div>
+          <div><div class="fw-bold fs-4" id="statOff">—</div><div class="text-muted small">Offboarded</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card stat-card p-3">
+        <div class="d-flex align-items-center gap-3">
+          <div class="icon-wrap" style="background:#fef3c7"><i class="bi bi-person-plus text-warning"></i></div>
+          <div><div class="fw-bold fs-4" id="statRecent">—</div><div class="text-muted small">New (30 days)</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Card -->
+  <div class="card main-card">
+    <div class="card-body p-0">
+
+      <!-- Toolbar -->
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 p-3 border-bottom">
+        <ul class="nav nav-tabs border-0 mb-0" id="mainTabs">
+          <li class="nav-item"><button class="nav-link active" data-tab="active"><i class="bi bi-person-check me-1"></i>Active</button></li>
+          <li class="nav-item"><button class="nav-link" data-tab="offboarded"><i class="bi bi-person-dash me-1"></i>Offboarded</button></li>
+          <li class="nav-item"><button class="nav-link" data-tab="adusers"><i class="bi bi-server me-1"></i>AD Users</button></li>
+          <li class="nav-item"><button class="nav-link" data-tab="groups"><i class="bi bi-collection me-1"></i>Groups</button></li>
+          <li class="nav-item"><button class="nav-link" data-tab="licenses"><i class="bi bi-key me-1"></i>Licenses</button></li>
+          <li class="nav-item"><button class="nav-link" data-tab="audit"><i class="bi bi-journal-text me-1"></i>Audit</button></li>
+        </ul>
+        <div class="d-flex gap-2" id="toolbar-actions">
+          <div class="search-wrap" id="toolbarSearch">
+            <i class="bi bi-search"></i>
+            <input type="text" id="searchInput" class="form-control form-control-sm" placeholder="Search users…" style="width:220px" />
+          </div>
+          <button class="btn btn-primary btn-sm" id="btnOnboard">
+            <i class="bi bi-person-plus-fill me-1"></i>Onboard User
+          </button>
+        </div>
+      </div>
+
+      <div class="p-3">
+
+        <!-- Active Users -->
+        <div id="pane-active">
+          <table class="table table-hover mb-0">
+            <thead><tr>
+              <th>Name</th><th>UPN</th><th>Department</th><th>Job Title</th><th>Start Date</th><th>Status</th><th style="width:110px">Actions</th>
+            </tr></thead>
+            <tbody id="tbody-active"></tbody>
+          </table>
+          <div class="empty-state d-none" id="empty-active"><i class="bi bi-inbox"></i>No active users found.</div>
+        </div>
+
+        <!-- Offboarded -->
+        <div id="pane-offboarded" class="d-none">
+          <table class="table table-hover mb-0">
+            <thead><tr>
+              <th>Name</th><th>UPN</th><th>Department</th><th>End Date</th><th>Ticket</th><th>Reason</th><th style="width:80px">Actions</th>
+            </tr></thead>
+            <tbody id="tbody-offboarded"></tbody>
+          </table>
+          <div class="empty-state d-none" id="empty-offboarded"><i class="bi bi-inbox"></i>No offboarded users found.</div>
+        </div>
+
+        <!-- AD Users -->
+        <div id="pane-adusers" class="d-none">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="search-wrap">
+              <i class="bi bi-search"></i>
+              <input type="text" id="adUserSearch" class="form-control form-control-sm" placeholder="Search AD users…" style="width:220px" />
+            </div>
+            <button class="btn btn-outline-secondary btn-sm" onclick="loadADUsers()"><i class="bi bi-arrow-clockwise"></i></button>
+          </div>
+          <div id="adUsersNotConnected" class="empty-state d-none">
+            <i class="bi bi-hdd-network"></i>
+            AD not connected. Run the app on a domain-joined machine with RSAT installed.<br>
+            <small class="text-muted">Check AD status indicator in the navbar.</small>
+          </div>
+          <table class="table table-hover mb-0" id="adUsersTable">
+            <thead><tr><th>Name</th><th>UPN</th><th>Department</th><th>Job Title</th><th>Status</th><th style="width:110px">Actions</th></tr></thead>
+            <tbody id="tbody-adusers"></tbody>
+          </table>
+          <div class="empty-state d-none" id="empty-adusers"><i class="bi bi-person"></i>No AD users found.</div>
+        </div>
+
+        <!-- Groups -->
+        <div id="pane-groups" class="d-none">
+          <ul class="nav sub-tabs nav-tabs border-bottom mb-3" id="groupSubTabs">
+            <li class="nav-item"><button class="nav-link active" data-gtab="ad"><i class="bi bi-server me-1"></i>AD Groups</button></li>
+            <li class="nav-item"><button class="nav-link" data-gtab="m365"><i class="bi bi-cloud me-1"></i>M365 Groups</button></li>
+          </ul>
+
+          <!-- AD Groups -->
+          <div id="gpane-ad">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div class="search-wrap">
+                <i class="bi bi-search"></i>
+                <input type="text" id="adGroupSearch" class="form-control form-control-sm" placeholder="Search AD groups…" style="width:220px" />
+              </div>
+              <button class="btn btn-outline-secondary btn-sm" onclick="loadADGroups()"><i class="bi bi-arrow-clockwise"></i></button>
+            </div>
+            <div id="adGroupsNotConnected" class="empty-state d-none">
+              <i class="bi bi-hdd-network"></i>
+              AD not connected. Run the app on a domain-joined machine with RSAT installed.<br>
+              <small class="text-muted">Check AD status indicator in the navbar.</small>
+            </div>
+            <table class="table table-hover mb-0" id="adGroupsTable">
+              <thead><tr><th>Name</th><th>SAM</th><th>Type</th><th>Scope</th><th>Description</th><th style="width:80px">Actions</th></tr></thead>
+              <tbody id="tbody-adgroups"></tbody>
+            </table>
+            <div class="empty-state d-none" id="empty-adgroups"><i class="bi bi-collection"></i>No AD groups found.</div>
+          </div>
+
+          <!-- M365 Groups -->
+          <div id="gpane-m365" class="d-none">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div class="search-wrap">
+                <i class="bi bi-search"></i>
+                <input type="text" id="m365GroupSearch" class="form-control form-control-sm" placeholder="Search M365 groups…" style="width:220px" />
+              </div>
+              <button class="btn btn-outline-secondary btn-sm" onclick="loadM365Groups()"><i class="bi bi-arrow-clockwise"></i></button>
+            </div>
+            <div id="m365GroupsNotConnected" class="empty-state d-none">
+              <i class="bi bi-cloud-slash"></i>
+              Graph not connected. Set GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET in .env
+            </div>
+            <table class="table table-hover mb-0" id="m365GroupsTable">
+              <thead><tr><th>Name</th><th>Type</th><th>Mail Enabled</th><th>Description</th><th style="width:80px">Actions</th></tr></thead>
+              <tbody id="tbody-m365groups"></tbody>
+            </table>
+            <div class="empty-state d-none" id="empty-m365groups"><i class="bi bi-collection"></i>No M365 groups found.</div>
+          </div>
+        </div>
+
+        <!-- Licenses -->
+        <div id="pane-licenses" class="d-none">
+          <div id="licensesNotConnected" class="empty-state d-none">
+            <i class="bi bi-cloud-slash"></i>
+            Graph not connected. Set GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET in .env
+          </div>
+          <div id="licensesContent">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h6 class="mb-0 fw-semibold text-muted">License Pool</h6>
+              <button class="btn btn-outline-secondary btn-sm" onclick="loadLicenses()"><i class="bi bi-arrow-clockwise"></i></button>
+            </div>
+            <div class="row g-3 mb-4" id="licenseCards"></div>
+            <h6 class="fw-semibold text-muted mb-2">User License Assignments</h6>
+            <table class="table table-hover mb-0">
+              <thead><tr><th>User</th><th>UPN</th><th>License (local record)</th><th>Graph Licenses</th><th style="width:120px">Actions</th></tr></thead>
+              <tbody id="tbody-licenses"></tbody>
+            </table>
+            <div class="empty-state d-none" id="empty-licenses"><i class="bi bi-key"></i>No users found.</div>
+          </div>
+        </div>
+
+        <!-- Audit Log -->
+        <div id="pane-audit" class="d-none">
+          <div class="d-flex justify-content-end mb-2">
+            <button class="btn btn-outline-secondary btn-sm" onclick="exportAudit()">
+              <i class="bi bi-download me-1"></i>Export CSV
+            </button>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead><tr>
+                <th style="white-space:nowrap">Timestamp</th>
+                <th>User</th>
+                <th>Action</th>
+                <th>Details</th>
+                <th>Ticket</th>
+                <th style="white-space:nowrap">Performed By</th>
+              </tr></thead>
+              <tbody id="tbody-audit"></tbody>
+            </table>
+          </div>
+          <div class="empty-state d-none" id="empty-audit"><i class="bi bi-journal-x"></i>No audit entries yet.</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===================== ONBOARD MODAL ===================== -->
+<div class="modal fade" id="onboardModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-person-plus-fill me-2 text-primary"></i>Onboard New User</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="onboardAlert" class="alert d-none"></div>
+
+        <!-- Core Fields -->
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Full Name <span class="text-danger">*</span></label>
+            <input type="text" id="ob-name" class="form-control" placeholder="John Smith" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">UPN (Email) <span class="text-danger">*</span></label>
+            <div class="input-group">
+              <input type="text" id="ob-upn-user" class="form-control" placeholder="john.smith" />
+              <select id="ob-upn-domain" class="form-select" style="max-width:48%"></select>
+            </div>
+            <input type="hidden" id="ob-upn" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Department <span class="text-danger">*</span></label>
+            <input type="text" id="ob-dept" class="form-control" placeholder="e.g. Engineering" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Job Title <span class="text-danger">*</span></label>
+            <input type="text" id="ob-title" class="form-control" placeholder="e.g. Senior Developer" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Manager <span class="text-danger">*</span> <span class="text-muted small">(email or SAM)</span></label>
+            <input type="text" id="ob-manager" class="form-control" placeholder="manager@domain or manager" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Location / Office</label>
+            <input type="text" id="ob-location" class="form-control" placeholder="e.g. London HQ" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Phone</label>
+            <input type="tel" id="ob-phone" class="form-control" placeholder="+44 20 1234 5678" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Mobile</label>
+            <input type="tel" id="ob-mobile" class="form-control" placeholder="+44 7700 900000" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Country <span class="text-muted small">(2-letter code)</span> <span class="text-danger">*</span> </label>
+            <input type="text" id="ob-country" class="form-control" placeholder="e.g. GB, IN, US" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Start Date</label>
+            <input type="date" id="ob-start" class="form-control" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Contract End Date <span class="text-muted small">(if fixed-term)</span></label>
+            <input type="date" id="ob-contract-end" class="form-control" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold d-flex align-items-center gap-2">
+              License
+              <span id="ob-license-src" class="badge rounded-pill bg-secondary fw-normal" style="font-size:.7rem">static</span>
+            </label>
+            <select id="ob-license" class="form-select">
+              <option value="">— None —</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Description</label>
+            <input type="text" id="ob-description" class="form-control" placeholder="e.g. Contractor — Project Apollo" />
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Notes</label>
+            <textarea id="ob-notes" class="form-control" rows="2" placeholder="Any additional notes…"></textarea>
+          </div>
+        </div>
+
+        <!-- Active Directory Account (always created on onboarding) -->
+        <div class="border rounded p-3 mt-3">
+          <div class="fw-semibold mb-1 text-muted small text-uppercase letter-spacing">
+            <i class="bi bi-server me-1"></i>Active Directory Account
+            <span class="badge rounded-pill ms-1" id="ob-ad-badge">—</span>
+          </div>
+          <p class="text-muted small mb-3">
+            The account is created directly in AD when you onboard. SAM, given name and surname are filled in
+            automatically from the details above — adjust them if needed. If a License is selected above and Graph
+            is connected, it is assigned automatically ~45 minutes later, once directory sync has propagated the user.
+          </p>
+          <div id="ob-ad-fields" class="bg-light rounded p-3">
+            <div class="row g-2">
+              <div class="col-12">
+                <label class="form-label small fw-semibold">Display Name</label>
+                <input type="text" id="ob-display" class="form-control form-control-sm" placeholder="John Smith" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small fw-semibold">SAM Account <span class="text-danger">*</span></label>
+                <input type="text" id="ob-sam" class="form-control form-control-sm" placeholder="jsmith" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small fw-semibold">Given Name</label>
+                <input type="text" id="ob-given" class="form-control form-control-sm" placeholder="John" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small fw-semibold">Surname</label>
+                <input type="text" id="ob-sn" class="form-control form-control-sm" placeholder="Smith" />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label small fw-semibold">Temp Password <span class="text-danger">*</span></label>
+                <input type="password" id="ob-pass" class="form-control form-control-sm" autocomplete="new-password" />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label small fw-semibold">OU (optional)</label>
+                <select id="ob-ou" class="form-select form-select-sm">
+                  <option value="">— Domain default —</option>
+                </select>
+                <div id="ob-ou-loading" class="text-muted small d-none mt-1">
+                  <i class="bi bi-hourglass-split me-1"></i>Loading OUs…
+                </div>
+              </div>
+              <div class="col-12">
+                <div class="form-check form-check-sm">
+                  <input class="form-check-input" type="checkbox" id="ob-must-change" checked>
+                  <label class="form-check-label small" for="ob-must-change">Require password change at first logon</label>
+                </div>
+              </div>
+              <div class="col-12">
+                <label class="form-label small fw-semibold">Add to AD Groups <span class="text-muted">(optional)</span></label>
+                <input type="text" id="ob-group-filter" class="form-control form-control-sm mb-1"
+                  placeholder="Filter groups…" oninput="filterGroupChecklist()" />
+                <div id="ob-groups-list" class="border rounded p-2"
+                  style="max-height:150px; overflow-y:auto; background:#fff; min-height:36px;">
+                  <div class="text-muted small">Enable AD account above to load groups.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" id="btnSubmitOnboard">
+          <span class="spinner-border spinner-border-sm d-none me-1" id="obSpinner"></span>
+          Onboard User
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===================== OFFBOARD MODAL ===================== -->
+<div class="modal fade" id="offboardModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-person-dash-fill me-2 text-danger"></i>Offboard User</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="offboardAlert" class="alert d-none"></div>
+        <p class="text-muted mb-3">Offboarding: <strong id="offboard-name-display"></strong></p>
+        <input type="hidden" id="offboard-uid" />
+        <input type="hidden" id="offboard-upn" />
+
+        <!-- Integration actions -->
+        <div class="border rounded p-3 mb-3">
+          <div class="fw-semibold small text-muted text-uppercase mb-2"><i class="bi bi-diagram-3 me-1"></i>Integration Actions</div>
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <div class="form-check mb-0">
+              <input class="form-check-input" type="checkbox" id="off-disable-ad">
+              <label class="form-check-label small" for="off-disable-ad">Disable Active Directory account</label>
+            </div>
+            <span class="badge rounded-pill" id="off-ad-badge">—</span>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <div class="form-check mb-0">
+              <input class="form-check-input" type="checkbox" id="off-remove-license">
+              <label class="form-check-label small" for="off-remove-license">Remove all M365 licenses via Graph</label>
+            </div>
+            <span class="badge rounded-pill" id="off-graph-badge">—</span>
+          </div>
+        </div>
+
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label fw-semibold">Ticket Number <span class="text-danger">*</span></label>
+            <input type="text" id="off-ticket" class="form-control" placeholder="e.g. INC0012345" />
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">End Date <span class="text-danger">*</span></label>
+            <input type="date" id="off-end" class="form-control" />
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Reason</label>
+            <select id="off-reason" class="form-select">
+              <option value="">— Select —</option>
+              <option>Resignation</option>
+              <option>Contract End</option>
+              <option>Termination</option>
+              <option>Retirement</option>
+              <option>Transfer</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label fw-semibold">Notes</label>
+            <textarea id="off-notes" class="form-control" rows="2"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-danger" id="btnSubmitOffboard">
+          <span class="spinner-border spinner-border-sm d-none me-1" id="offSpinner"></span>
+          Confirm Offboard
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===================== VIEW MODAL ===================== -->
+<div class="modal fade" id="viewModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-person-badge me-2"></i>User Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="viewModalBody">Loading…</div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===================== DELETE CONFIRM ===================== -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Delete User</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pt-1">
+        Permanently delete <strong id="delete-name-display"></strong>? This cannot be undone.
+        <input type="hidden" id="delete-uid" />
+      </div>
+      <div class="modal-footer border-0">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-danger btn-sm" id="btnConfirmDelete">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===================== AD DISABLE CONFIRM ===================== -->
+<div class="modal fade" id="adDisableModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title text-danger"><i class="bi bi-person-dash me-2"></i>Disable AD Account</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pt-1">
+        Disable <strong id="adDisable-upn-display"></strong> and remove it from <strong>all groups</strong>?
+        The account can be re-enabled later in AD.
+        <input type="hidden" id="adDisable-upn" />
+      </div>
+      <div class="modal-footer border-0">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-danger btn-sm" id="btnConfirmADDisable">Disable</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===================== AD DELETE CONFIRM ===================== -->
+<div class="modal fade" id="adDeleteModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Delete AD User</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pt-1">
+        Permanently delete <strong id="adDelete-upn-display"></strong> from Active Directory?
+        This <strong>cannot be undone</strong>.
+        <input type="hidden" id="adDelete-upn" />
+      </div>
+      <div class="modal-footer border-0">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-danger btn-sm" id="btnConfirmADDelete">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===================== AD EDIT MODAL ===================== -->
+<div class="modal fade" id="adEditModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-pencil-square me-2 text-primary"></i>Edit AD User</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="adEditAlert" class="alert d-none"></div>
+        <p class="text-muted mb-3">Editing: <strong id="adEdit-upn-display"></strong></p>
+        <input type="hidden" id="adEdit-upn" />
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label fw-semibold">UPN / Sign-in name</label>
+            <div class="input-group">
+              <span class="input-group-text" id="adEdit-upn-user"></span>
+              <select id="adEdit-upn-domain" class="form-select" style="max-width:55%"></select>
+            </div>
+            <div class="form-text">Change the suffix to move the user to another domain — updates their sign-in name (UPN).</div>
+          </div>
+          <div class="col-md-6"><label class="form-label fw-semibold">Display Name</label><input id="adEdit-display" class="form-control" /></div>
+          <div class="col-md-3"><label class="form-label fw-semibold">Given Name</label><input id="adEdit-given" class="form-control" /></div>
+          <div class="col-md-3"><label class="form-label fw-semibold">Surname</label><input id="adEdit-sn" class="form-control" /></div>
+          <div class="col-md-6"><label class="form-label fw-semibold">Department</label><input id="adEdit-dept" class="form-control" /></div>
+          <div class="col-md-6"><label class="form-label fw-semibold">Job Title</label><input id="adEdit-title" class="form-control" /></div>
+          <div class="col-md-6"><label class="form-label fw-semibold">Manager <span class="text-muted small">(email or SAM)</span></label><input id="adEdit-manager" class="form-control" placeholder="manager@domain or jsmith" /></div>
+          <div class="col-md-6"><label class="form-label fw-semibold">Email</label><input id="adEdit-email" class="form-control" /></div>
+          <div class="col-md-4"><label class="form-label fw-semibold">Phone</label><input id="adEdit-phone" class="form-control" /></div>
+          <div class="col-md-4"><label class="form-label fw-semibold">Mobile</label><input id="adEdit-mobile" class="form-control" /></div>
+          <div class="col-md-4"><label class="form-label fw-semibold">Country <span class="text-muted small">(2-letter)</span></label><input id="adEdit-country" class="form-control" placeholder="GB" /></div>
+          <div class="col-12"><label class="form-label fw-semibold">Description</label><input id="adEdit-description" class="form-control" /></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" id="btnSaveADEdit">
+          <span class="spinner-border spinner-border-sm d-none me-1" id="adEditSpinner"></span>Save Changes
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===================== GROUP MEMBERS MODAL ===================== -->
+<div class="modal fade" id="groupModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-people me-2"></i>Group Members — <span id="groupModalName"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="groupAlert" class="alert d-none"></div>
+        <input type="hidden" id="groupModalId" />
+        <input type="hidden" id="groupModalType" />
+
+        <!-- Add member -->
+        <div class="d-flex gap-2 mb-3">
+          <input type="text" id="addMemberInput" class="form-control form-control-sm"
+            placeholder="SAM account (AD) or UPN (M365)" style="max-width:280px" />
+          <button class="btn btn-primary btn-sm" onclick="addMemberToGroup()">
+            <i class="bi bi-person-plus me-1"></i>Add
+          </button>
+        </div>
+
+        <!-- Members table -->
+        <div id="groupMembersLoading" class="text-muted small py-2">Loading members…</div>
+        <table class="table table-hover mb-0" id="groupMembersTable" style="display:none">
+          <thead><tr><th>Name</th><th>SAM / UPN</th><th>Type</th><th style="width:60px"></th></tr></thead>
+          <tbody id="tbody-group-members"></tbody>
+        </table>
+        <div class="empty-state d-none" id="empty-group-members"><i class="bi bi-person-slash"></i>No members.</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===================== ASSIGN LICENSE MODAL ===================== -->
+<div class="modal fade" id="assignLicModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-key me-2 text-primary"></i>Manage Licenses</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="licAlert" class="alert d-none"></div>
+        <p class="text-muted mb-3">User: <strong id="licModalUser"></strong></p>
+        <input type="hidden" id="licModalUpn" />
+
+        <h6 class="fw-semibold mb-2">Current Licenses</h6>
+        <div id="currentLicenses" class="mb-3 text-muted small">Loading…</div>
+
+        <h6 class="fw-semibold mb-2">Assign New License</h6>
+        <div class="d-flex gap-2">
+          <select id="licSkuSelect" class="form-select form-select-sm" style="max-width:280px">
+            <option value="">— Select SKU —</option>
+          </select>
+          <button class="btn btn-primary btn-sm" onclick="assignLicense()">
+            <i class="bi bi-plus me-1"></i>Assign
+          </button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===================== SETTINGS MODAL ===================== -->
+<div class="modal fade" id="settingsModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-gear me-2 text-primary"></i>Organization Settings</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="settingsAlert" class="alert d-none"></div>
+        <h6 class="fw-semibold mb-1">Organization Logo</h6>
+        <p class="text-muted small">Shown in the navigation bar and on the sign-in page for all users.</p>
+
+        <div id="logoPreviewBox" class="d-flex align-items-center gap-3 mb-3 p-3 rounded" style="background:#f0f2f5;min-height:72px">
+          <img id="settingsLogoPreview" src="" alt="" style="height:40px;max-width:200px;object-fit:contain;display:none" />
+          <span id="settingsLogoNone" class="text-muted small">No logo set — using the default icon.</span>
+        </div>
+
+        {% if is_admin %}
+        <label class="form-label small fw-semibold">Upload a new logo</label>
+        <input type="file" id="logoFile" class="form-control" accept=".png,.jpg,.jpeg,.gif,.webp" />
+        <div class="form-text">PNG, JPG, GIF or WEBP. Max 2 MB. Wide/transparent works best.</div>
+        <div class="d-flex gap-2 mt-2">
+          <button class="btn btn-primary btn-sm" id="btnUploadLogo">
+            <span class="spinner-border spinner-border-sm d-none me-1" id="logoSpinner"></span>Upload
+          </button>
+          <button class="btn btn-outline-danger btn-sm" id="btnRemoveLogo"><i class="bi bi-trash me-1"></i>Remove</button>
+        </div>
+        {% else %}
+        <p class="text-muted small fst-italic mb-0">Only administrators can change the organization logo.</p>
+        {% endif %}
+
+        <hr class="my-4" />
+        <h6 class="fw-semibold mb-1">Theme</h6>
+        <p class="text-muted small">Applies to this browser only.</p>
+        <div class="btn-group w-100" role="group" id="themeButtons">
+          <input type="radio" class="btn-check" name="theme" id="theme-light" value="light" autocomplete="off">
+          <label class="btn btn-outline-secondary" for="theme-light"><i class="bi bi-sun me-1"></i>Light</label>
+          <input type="radio" class="btn-check" name="theme" id="theme-dark" value="dark" autocomplete="off">
+          <label class="btn btn-outline-secondary" for="theme-dark"><i class="bi bi-moon-stars me-1"></i>Dark</label>
+          <input type="radio" class="btn-check" name="theme" id="theme-system" value="system" autocomplete="off">
+          <label class="btn btn-outline-secondary" for="theme-system"><i class="bi bi-circle-half me-1"></i>System</label>
+        </div>
+
+        {% if is_admin %}
+        <hr class="my-4" />
+        <h6 class="fw-semibold mb-1">UPN Suffixes <span class="badge bg-secondary fw-normal">admin</span></h6>
+        <p class="text-muted small">Domains offered when creating users (forest UPN suffixes).</p>
+        <ul id="upnSuffixList" class="list-group mb-2 small"></ul>
+        <div class="input-group input-group-sm">
+          <input type="text" id="newUpnSuffix" class="form-control" placeholder="e.g. tryzens.com" />
+          <button class="btn btn-primary" id="btnAddUpnSuffix">
+            <span class="spinner-border spinner-border-sm d-none me-1" id="upnSuffixSpinner"></span>Add
+          </button>
+        </div>
+        {% endif %}
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- Toast -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index:9999">
+  <div id="toastEl" class="toast align-items-center border-0" role="alert">
+    <div class="d-flex">
+      <div class="toast-body" id="toastMsg"></div>
+      <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ─── CSRF: attach token to every state-changing fetch ─────────────────────────
+const CSRF_TOKEN = "{{ csrf_token }}";
+const IS_ADMIN = {{ is_admin | tojson }};
+const _origFetch = window.fetch.bind(window);
+window.fetch = (url, opts = {}) => {
+  const method = (opts.method || "GET").toUpperCase();
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    opts.headers = Object.assign({}, opts.headers || {}, { "X-CSRF-Token": CSRF_TOKEN });
+  }
+  return _origFetch(url, opts);
+};
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const $ = id => document.getElementById(id);
+
+const onboardModal    = new bootstrap.Modal($("onboardModal"));
+const offboardModal   = new bootstrap.Modal($("offboardModal"));
+const viewModal       = new bootstrap.Modal($("viewModal"));
+const deleteModal     = new bootstrap.Modal($("deleteModal"));
+const groupModal      = new bootstrap.Modal($("groupModal"));
+const assignLicModal  = new bootstrap.Modal($("assignLicModal"));
+const adDisableModal  = new bootstrap.Modal($("adDisableModal"));
+const adEditModal     = new bootstrap.Modal($("adEditModal"));
+const adDeleteModal   = new bootstrap.Modal($("adDeleteModal"));
+const settingsModal   = new bootstrap.Modal($("settingsModal"));
+const toastEl         = new bootstrap.Toast($("toastEl"), { delay: 3500 });
+
+function showToast(msg, ok = true) {
+  const el = $("toastEl");
+  el.className = `toast align-items-center border-0 text-bg-${ok ? "success" : "danger"}`;
+  $("toastMsg").textContent = msg;
+  toastEl.show();
+}
+
+function showAlert(id, msg, type = "danger") {
+  const el = $(id);
+  el.className = `alert alert-${type}`;
+  el.textContent = msg;
+  el.classList.remove("d-none");
+}
+
+function hideAlert(id) { $(id).classList.add("d-none"); }
+
+function esc(s) {
+  return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+// Format dates, including PowerShell/.NET "/Date(ms)/" and ISO strings.
+function fmtDate(v) {
+  if (!v) return "";
+  const s = String(v);
+  const m = s.match(/\/Date\((\d+)\)\//);
+  let ms = m ? parseInt(m[1], 10) : Date.parse(s);
+  if (isNaN(ms)) return s;
+  const d = new Date(ms), pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// ─── Connectivity ─────────────────────────────────────────────────────────────
+
+let adConnected = false;
+let graphConnected = false;
+let availableSkus = [];
+let allOnboardGroups = [];
+
+// ─── OU Dropdown ─────────────────────────────────────────────────────────────
+
+async function loadOUDropdown() {
+  const sel    = $("ob-ou");
+  const loader = $("ob-ou-loading");
+  sel.innerHTML = '<option value="">— Domain default —</option>';
+  if (!adConnected) return;
+  loader.classList.remove("d-none");
+  try {
+    const r   = await fetch("/api/ad/ous");
+    const ous = await r.json();
+    if (Array.isArray(ous)) {
+      ous.forEach(ou => {
+        const dn = ou.DistinguishedName || ou.distinguishedName || "";
+        const path = dn
+          .split(",")
+          .filter(p => p.trim().startsWith("OU="))
+          .map(p => p.replace("OU=", "").trim())
+          .reverse()
+          .join(" > ");
+        const opt = document.createElement("option");
+        opt.value = dn;
+        opt.textContent = path || ou.Name || ou.name || dn;
+        sel.appendChild(opt);
+      });
+    }
+  } catch { /* AD unreachable */ }
+  loader.classList.add("d-none");
+}
+
+// ─── AD Groups Checklist for Onboard ──────────────────────────────────────────
+
+async function loadADGroupsForOnboard() {
+  const container = $("ob-groups-list");
+  container.innerHTML = '<div class="text-muted small"><i class="bi bi-hourglass-split me-1"></i>Loading groups…</div>';
+  if (!adConnected) {
+    container.innerHTML = '<div class="text-muted small">AD not connected</div>';
+    return;
+  }
+  try {
+    const r      = await fetch("/api/ad/groups");
+    const groups = await r.json();
+    allOnboardGroups = Array.isArray(groups) ? groups : [];
+    renderGroupChecklist(allOnboardGroups);
+  } catch {
+    container.innerHTML = '<div class="text-muted small text-danger">Failed to load groups</div>';
+  }
+}
+
+function renderGroupChecklist(groups) {
+  const container = $("ob-groups-list");
+  if (!groups.length) {
+    container.innerHTML = '<div class="text-muted small">No groups found</div>';
+    return;
+  }
+  container.innerHTML = groups.map(g => {
+    const sam  = esc(g.SamAccountName || g.sAMAccountName || g.Name || "");
+    const name = esc(g.Name || g.name || sam);
+    const cat  = esc(g.GroupCategory || "");
+    return `<div class="form-check form-check-sm">
+      <input class="form-check-input ob-group-check" type="checkbox" value="${sam}" id="obgrp-${sam}">
+      <label class="form-check-label small" for="obgrp-${sam}">${name}<span class="text-muted ms-1 fst-italic">${cat}</span></label>
+    </div>`;
+  }).join("");
+}
+
+function filterGroupChecklist() {
+  const q = ($("ob-group-filter").value || "").toLowerCase();
+  const filtered = q
+    ? allOnboardGroups.filter(g =>
+        (g.Name || "").toLowerCase().includes(q) ||
+        (g.SamAccountName || "").toLowerCase().includes(q))
+    : allOnboardGroups;
+  renderGroupChecklist(filtered);
+}
+
+async function checkConnectivity() {
+  const [adR, graphR] = await Promise.all([
+    fetch("/api/ad/status").then(r => r.json()).catch(() => ({ connected: false, error: "Unreachable" })),
+    fetch("/api/graph/status").then(r => r.json()).catch(() => ({ connected: false, error: "Unreachable" })),
+  ]);
+
+  adConnected = adR.connected;
+  graphConnected = graphR.connected;
+
+  const adDot = $("adDot");
+  adDot.className = `bi bi-circle-fill conn-dot ${adR.connected ? "ok" : "fail"}`;
+  $("adStatusLabel").title = adR.connected
+    ? `AD: ${adR.domain || "Connected"}`
+    : `AD: ${adR.error || "Not connected"}`;
+
+  const graphDot = $("graphDot");
+  graphDot.className = `bi bi-circle-fill conn-dot ${graphR.connected ? "ok" : "fail"}`;
+  $("graphStatusLabel").title = graphR.connected
+    ? `Graph: ${graphR.org || "Connected"}`
+    : `Graph: ${graphR.error || "Not connected"}`;
+
+  // Update onboard modal badge
+  updateConnBadge("ob-ad-badge", adConnected);
+
+  // Update offboard modal badges
+  updateConnBadge("off-ad-badge", adConnected);
+  updateConnBadge("off-graph-badge", graphConnected);
+
+  // Pre-check offboard toggles based on connectivity
+  $("off-disable-ad").checked = adConnected;
+  $("off-remove-license").checked = graphConnected;
+
+  if (graphConnected) {
+    loadSkuOptions();
+  }
+}
+
+function updateConnBadge(id, connected) {
+  const el = $(id);
+  if (connected) {
+    el.className = "badge rounded-pill bg-success";
+    el.textContent = "Connected";
+  } else {
+    el.className = "badge rounded-pill bg-secondary";
+    el.textContent = "Not configured";
+  }
+}
+
+async function loadSkuOptions() {
+  try {
+    const r = await fetch("/api/graph/licenses");
+    const skus = await r.json();
+    availableSkus = Array.isArray(skus) ? skus.filter(s => s.capabilityStatus === "Enabled") : [];
+    populateSkuSelect("licSkuSelect");
+    populateOnboardLicenseSelect();
+  } catch { /* silent */ }
+}
+
+function populateSkuSelect(selectId) {
+  const sel = $(selectId);
+  sel.innerHTML = '<option value="">— Select SKU —</option>';
+  availableSkus.forEach(sku => {
+    const used  = sku.consumedUnits ?? 0;
+    const total = sku.prepaidUnits?.enabled ?? 0;
+    const opt   = document.createElement("option");
+    opt.value       = sku.skuId;
+    opt.textContent = `${sku.skuPartNumber} (${used}/${total} used)`;
+    sel.appendChild(opt);
+  });
+}
+
+function populateOnboardLicenseSelect() {
+  const sel = $("ob-license");
+  const badge = $("ob-license-src");
+  const prev  = sel.value;
+  sel.innerHTML = '<option value="">— None —</option>';
+  if (availableSkus.length) {
+    availableSkus.forEach(sku => {
+      const used  = sku.consumedUnits ?? 0;
+      const total = sku.prepaidUnits?.enabled ?? 0;
+      const avail = total - used;
+      const opt   = document.createElement("option");
+      opt.value         = sku.skuPartNumber;   // stored in local DB
+      opt.dataset.skuId = sku.skuId;           // used for Graph API
+      opt.textContent   = `${sku.skuPartNumber} (${avail} available)`;
+      sel.appendChild(opt);
+    });
+    badge.textContent  = "from Graph";
+    badge.className    = "badge rounded-pill bg-success fw-normal";
+    if (prev) sel.value = prev;
+  } else {
+    // Fallback static list when Graph is offline
+    ["Microsoft 365 E3","Microsoft 365 E5","Microsoft 365 Business Premium",
+     "Microsoft 365 F3","Azure AD P2","Other"].forEach(name => {
+      const opt = document.createElement("option");
+      opt.value = name; opt.textContent = name;
+      sel.appendChild(opt);
+    });
+    badge.textContent = "static";
+    badge.className   = "badge rounded-pill bg-secondary fw-normal";
+  }
+}
+
+// ─── Stats ───────────────────────────────────────────────────────────────────
+
+async function loadStats() {
+  const r = await fetch("/api/stats");
+  const d = await r.json();
+  $("statTotal").textContent  = d.total;
+  $("statActive").textContent = d.active;
+  $("statOff").textContent    = d.offboarded;
+  $("statRecent").textContent = d.recent;
+}
+
+// ─── Tabs ────────────────────────────────────────────────────────────────────
+
+let currentTab = "active";
+const ALL_PANES = ["active", "offboarded", "adusers", "groups", "licenses", "audit"];
+
+document.querySelectorAll("#mainTabs button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#mainTabs button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    currentTab = btn.dataset.tab;
+    ALL_PANES.forEach(t => $(  `pane-${t}`).classList.toggle("d-none", t !== currentTab));
+
+    // Show/hide toolbar search and onboard button
+    const isUserTab = currentTab === "active" || currentTab === "offboarded";
+    $("toolbarSearch").classList.toggle("d-none", !isUserTab);
+    $("btnOnboard").classList.toggle("d-none", currentTab !== "active");
+
+    loadCurrentTab();
+  });
+});
+
+function loadCurrentTab() {
+  if (currentTab === "active")      loadUsers("active");
+  else if (currentTab === "offboarded") loadUsers("offboarded");
+  else if (currentTab === "adusers") loadADUsers();
+  else if (currentTab === "groups") loadCurrentGroupTab();
+  else if (currentTab === "licenses") loadLicenses();
+  else loadAudit();
+}
+
+// ─── Group Sub-Tabs ───────────────────────────────────────────────────────────
+
+let currentGroupTab = "ad";
+
+document.querySelectorAll("#groupSubTabs button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#groupSubTabs button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    currentGroupTab = btn.dataset.gtab;
+    $("gpane-ad").classList.toggle("d-none", currentGroupTab !== "ad");
+    $("gpane-m365").classList.toggle("d-none", currentGroupTab !== "m365");
+    loadCurrentGroupTab();
+  });
+});
+
+function loadCurrentGroupTab() {
+  if (currentGroupTab === "ad") loadADGroups();
+  else loadM365Groups();
+}
+
+// ─── Users ───────────────────────────────────────────────────────────────────
+
+async function loadUsers(status) {
+  const q   = $("searchInput").value.trim();
+  const url = `/api/users?status=${status}${q ? "&q=" + encodeURIComponent(q) : ""}`;
+  const r   = await fetch(url);
+  const users = await r.json();
+
+  const tbody = $(`tbody-${status}`);
+  const empty = $(`empty-${status}`);
+  tbody.innerHTML = "";
+
+  if (!users.length) { empty.classList.remove("d-none"); return; }
+  empty.classList.add("d-none");
+
+  users.forEach(u => {
+    const tr = document.createElement("tr");
+    if (status === "active") {
+      tr.innerHTML = `
+        <td><strong>${esc(u.full_name)}</strong></td>
+        <td class="text-muted">${esc(u.upn)}</td>
+        <td>${esc(u.department) || "—"}</td>
+        <td>${esc(u.job_title) || "—"}</td>
+        <td>${esc(u.start_date) || "—"}</td>
+        <td><span class="badge badge-active rounded-pill px-2">Active</span></td>
+        <td>
+          <button class="btn btn-sm btn-outline-secondary py-0 me-1" onclick="viewUser(${u.id})" title="View"><i class="bi bi-eye"></i></button>
+          <button class="btn btn-sm btn-outline-danger py-0" onclick="openOffboard(${u.id},'${esc(u.full_name)}','${esc(u.upn)}')" title="Offboard"><i class="bi bi-person-dash"></i></button>
+        </td>`;
+    } else {
+      tr.innerHTML = `
+        <td><strong>${esc(u.full_name)}</strong></td>
+        <td class="text-muted">${esc(u.upn)}</td>
+        <td>${esc(u.department) || "—"}</td>
+        <td>${esc(u.end_date) || "—"}</td>
+        <td>${esc(u.ticket) || "—"}</td>
+        <td>${esc(u.reason) || "—"}</td>
+        <td>
+          <button class="btn btn-sm btn-outline-secondary py-0 me-1" onclick="viewUser(${u.id})" title="View"><i class="bi bi-eye"></i></button>
+          <button class="btn btn-sm btn-outline-danger py-0" onclick="openDelete(${u.id},'${esc(u.full_name)}')" title="Delete"><i class="bi bi-trash"></i></button>
+        </td>`;
+    }
+    tbody.appendChild(tr);
+  });
+}
+
+// ─── Audit ───────────────────────────────────────────────────────────────────
+
+function exportAudit() {
+  window.location.href = "/api/audit/export";
+}
+
+async function loadAudit() {
+  const r    = await fetch("/api/audit");
+  const rows = await r.json();
+  const tbody = $("tbody-audit");
+  const empty = $("empty-audit");
+  tbody.innerHTML = "";
+  if (!rows.length) { empty.classList.remove("d-none"); return; }
+  empty.classList.add("d-none");
+  const cls = {
+    onboarded:"act-onboarded", ad_created:"act-onboarded", ad_enabled:"act-onboarded",
+    license_assigned:"act-onboarded", login:"act-onboarded",
+    offboarded:"act-offboarded", ad_disabled:"act-offboarded", license_removed:"act-offboarded", logout:"act-offboarded",
+    deleted:"act-deleted", ad_deleted:"act-deleted", upn_suffix_removed:"act-deleted",
+  };
+  rows.forEach(row => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="text-muted small">${esc(row.timestamp)}</td>
+      <td>${esc(row.full_name)}</td>
+      <td><span class="badge ${cls[row.action]||"act-other"} rounded-pill px-2">${esc(row.action)}</span></td>
+      <td class="small">${esc(row.details)}</td>
+      <td class="small">${esc(row.ticket) || "—"}</td>
+      <td class="small text-muted">${esc(row.actor) || "—"}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+// ─── View User ───────────────────────────────────────────────────────────────
+
+async function viewUser(uid) {
+  $("viewModalBody").innerHTML = "Loading…";
+  viewModal.show();
+  const r = await fetch(`/api/users/${uid}`);
+  const u = await r.json();
+  const badge = u.status === "active"
+    ? `<span class="badge badge-active rounded-pill px-2">Active</span>`
+    : `<span class="badge badge-off rounded-pill px-2">Offboarded</span>`;
+  const row = (label, val) =>
+    `<div class="col-md-6 mb-2"><span class="text-muted small d-block">${label}</span><strong class="text-break">${esc(val)||"—"}</strong></div>`;
+  $("viewModalBody").innerHTML = `
+    <div class="d-flex align-items-center gap-3 mb-4">
+      <div style="width:56px;height:56px;border-radius:50%;background:#dbeafe;display:flex;align-items:center;justify-content:center;font-size:1.6rem;color:#1d4ed8">
+        ${esc((u.full_name||"?")[0]).toUpperCase()}
+      </div>
+      <div>
+        <h5 class="mb-0">${esc(u.full_name)}</h5>
+        <div class="text-muted small">${esc(u.upn)}</div>
+        <div class="mt-1">${badge}</div>
+      </div>
+    </div>
+    <div class="row">
+      ${row("Department", u.department)}
+      ${row("Job Title", u.job_title)}
+      ${row("Manager", u.manager)}
+      ${row("Location", u.location)}
+      ${row("Phone", u.phone)}
+      ${row("Mobile", u.mobile)}
+      ${row("Country", u.country)}
+      ${row("License", u.license)}
+      ${row("Start Date", u.start_date)}
+      ${u.contract_end_date ? row("Contract End Date", u.contract_end_date) : ""}
+      ${u.status === "offboarded" ? row("Offboard Date", u.end_date) + row("Ticket", u.ticket) + row("Reason", u.reason) : ""}
+    </div>
+    ${u.description ? `<hr/><div class="text-muted small">Description</div><div>${esc(u.description)}</div>` : ""}
+    ${u.notes ? `<div class="text-muted small mt-2">Notes</div><div>${esc(u.notes)}</div>` : ""}
+    <div class="text-muted small mt-3">Created: ${esc(u.created_at)} | Updated: ${esc(u.updated_at)}</div>`;
+}
+
+// ─── Onboard ─────────────────────────────────────────────────────────────────
+
+// Auto-fill the AD name/SAM fields from the detail fields above so the admin
+// doesn't retype them. Once a field is edited by hand, we stop overwriting it.
+const _adEdited = { sam: false, given: false, sn: false, display: false };
+
+function _sanitizeSam(v) {
+  // SAMAccountName: strip characters AD disallows, cap at 20 chars
+  return v.replace(/[^A-Za-z0-9._-]/g, "").slice(0, 20);
+}
+
+function syncAdNamesFromFullName() {
+  const full  = $("ob-name").value.trim();
+  const parts = full.split(/\s+/).filter(Boolean);
+  if (!_adEdited.given)   $("ob-given").value   = parts[0] || "";
+  if (!_adEdited.sn)      $("ob-sn").value      = parts.slice(1).join(" ") || "";
+  if (!_adEdited.display) $("ob-display").value = full;
+}
+
+function syncSamFromUpn() {
+  if (_adEdited.sam) return;
+  const local = ($("ob-upn").value.split("@")[0] || "").trim();
+  $("ob-sam").value = _sanitizeSam(local);
+}
+
+$("ob-name").addEventListener("input", syncAdNamesFromFullName);
+$("ob-upn").addEventListener("input", syncSamFromUpn);
+$("ob-sam").addEventListener("input", () => { _adEdited.sam     = true; });
+$("ob-given").addEventListener("input", () => { _adEdited.given   = true; });
+$("ob-sn").addEventListener("input", () => { _adEdited.sn      = true; });
+$("ob-display").addEventListener("input", () => { _adEdited.display = true; });
+
+// Clear the required-field highlight as soon as the user types.
+["ob-name", "ob-upn-user", "ob-dept", "ob-title", "ob-manager", "ob-country",
+ "ob-sam", "ob-pass", "off-ticket", "off-end"].forEach(id =>
+  $(id).addEventListener("input", () => $(id).classList.remove("is-invalid")));
+
+// ─── UPN: username + domain dropdown ───────────────────────────────────────────
+
+function updateOnboardUpn() {
+  const u = $("ob-upn-user").value.trim();
+  const d = $("ob-upn-domain").value;
+  $("ob-upn").value = (u && d) ? `${u}@${d}` : "";
+  syncSamFromUpn();
+}
+
+async function loadOnboardDomains() {
+  const sel = $("ob-upn-domain");
+  if (!adConnected) {
+    sel.innerHTML = '<option value="">— AD not connected —</option>';
+    updateOnboardUpn();
+    return;
+  }
+  try {
+    const r = await fetch("/api/ad/upn-suffixes");
+    const list = await r.json();
+    const domains = Array.isArray(list) ? list : [];
+    sel.innerHTML = domains.length
+      ? domains.map(d => `<option value="${esc(d)}">@${esc(d)}</option>`).join("")
+      : '<option value="">— No domains —</option>';
+  } catch {
+    sel.innerHTML = '<option value="">— Failed to load —</option>';
+  }
+  updateOnboardUpn();
+}
+
+$("ob-upn-user").addEventListener("input", updateOnboardUpn);
+$("ob-upn-domain").addEventListener("change", updateOnboardUpn);
+
+$("btnOnboard").addEventListener("click", () => {
+  ["ob-name","ob-upn","ob-upn-user","ob-dept","ob-title","ob-manager","ob-location",
+   "ob-phone","ob-mobile","ob-country","ob-description","ob-notes",
+   "ob-display","ob-sam","ob-given","ob-sn","ob-pass","ob-group-filter"].forEach(id => $(id).value = "");
+  $("ob-ou").innerHTML = '<option value="">— Domain default —</option>';
+  populateOnboardLicenseSelect();
+  $("ob-start").value = "";
+  $("ob-contract-end").value = "";
+  $("ob-must-change").checked = true;
+  _adEdited.sam = _adEdited.given = _adEdited.sn = _adEdited.display = false;
+  ["ob-name", "ob-upn-user", "ob-dept", "ob-title", "ob-manager", "ob-country",
+   "ob-sam", "ob-pass"].forEach(id => $(id).classList.remove("is-invalid"));
+  allOnboardGroups = [];
+  updateConnBadge("ob-ad-badge", adConnected);
+  hideAlert("onboardAlert");
+  // AD account is always created — preload domains, OUs and the group checklist
+  loadOnboardDomains();
+  loadOUDropdown();
+  loadADGroupsForOnboard();
+  onboardModal.show();
+});
+
+$("btnSubmitOnboard").addEventListener("click", async () => {
+  hideAlert("onboardAlert");
+  const name    = $("ob-name").value.trim();
+  const upn     = $("ob-upn").value.trim();
+  const sam     = $("ob-sam").value.trim();
+  const pass    = $("ob-pass").value;
+  let   given   = $("ob-given").value.trim();
+  let   surname = $("ob-sn").value.trim();
+
+  // Enforce required (*) fields — highlight empties and focus the first one.
+  const checks = [
+    ["ob-name", !!name], ["ob-upn-user", !!upn],
+    ["ob-dept",    !!$("ob-dept").value.trim()],
+    ["ob-title",   !!$("ob-title").value.trim()],
+    ["ob-manager", !!$("ob-manager").value.trim()],
+    ["ob-country", !!$("ob-country").value.trim()],
+    ["ob-sam", !!sam], ["ob-pass", !!pass],
+  ];
+  let firstBad = null;
+  for (const [id, ok] of checks) {
+    $(id).classList.toggle("is-invalid", !ok);
+    if (!ok && !firstBad) firstBad = $(id);
+  }
+  if (firstBad) {
+    showAlert("onboardAlert", "Please complete all required fields marked with *.");
+    firstBad.focus();
+    return;
+  }
+  if (!given || !surname) {
+    const parts = name.split(/\s+/);
+    if (!given)   given   = parts[0] || name;
+    if (!surname) surname = parts.slice(1).join(" ") || parts[0] || name;
+  }
+
+  const spinner = $("obSpinner");
+  spinner.classList.remove("d-none");
+  const btn = $("btnSubmitOnboard");
+  btn.disabled = true;
+
+  try {
+    // Step 1: Create local record
+    const r = await fetch("/api/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        full_name:         name, upn,
+        department:        $("ob-dept").value.trim(),
+        job_title:         $("ob-title").value.trim(),
+        manager:           $("ob-manager").value.trim(),
+        location:          $("ob-location").value.trim(),
+        license:           $("ob-license").value,
+        start_date:        $("ob-start").value,
+        phone:             $("ob-phone").value.trim(),
+        mobile:            $("ob-mobile").value.trim(),
+        country:           $("ob-country").value.trim(),
+        description:       $("ob-description").value.trim(),
+        contract_end_date: $("ob-contract-end").value,
+        notes:             $("ob-notes").value.trim(),
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok) { showAlert("onboardAlert", data.error || "Failed to create local record."); return; }
+
+    const msgs = [data.message];
+
+    // Step 2: Create the AD account directly (always)
+    const selectedGroups = [...document.querySelectorAll(".ob-group-check:checked")].map(cb => cb.value);
+    const adR = await fetch("/api/ad/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        full_name:            name, upn, sam,
+        display_name:         $("ob-display").value.trim() || name,
+        email:                upn,
+        given_name:           given,
+        surname:              surname,
+        password:             pass,
+        department:           $("ob-dept").value.trim(),
+        title:                $("ob-title").value.trim(),
+        manager:              $("ob-manager").value.trim(),
+        ou:                   $("ob-ou").value,
+        must_change_password: $("ob-must-change").checked,
+        phone:                $("ob-phone").value.trim(),
+        mobile:               $("ob-mobile").value.trim(),
+        country:              $("ob-country").value.trim(),
+        description:          $("ob-description").value.trim(),
+        contract_end_date:    $("ob-contract-end").value,
+        ad_groups:            selectedGroups,
+      }),
+    });
+    const adData = await adR.json();
+    const grpText = selectedGroups.length ? ` Added to ${selectedGroups.length} group(s).` : "";
+    msgs.push(adR.ok ? `AD account created.${grpText}` : `AD: ${adData.error}`);
+
+    // Step 3: Schedule the M365 license for ~45 min later (after directory sync).
+    // Only when a Graph-backed SKU was picked and Graph is connected.
+    const licOpt = $("ob-license").options[$("ob-license").selectedIndex];
+    const skuId  = licOpt?.dataset?.skuId || "";
+    if (adR.ok && skuId && graphConnected) {
+      const schR = await fetch("/api/graph/schedule-license", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ upn, sku_id: skuId }),
+      });
+      const schData = await schR.json();
+      msgs.push(schR.ok ? "License assignment scheduled (~45 min)." : `License: ${schData.error}`);
+    }
+
+    onboardModal.hide();
+    showToast(msgs.join(" "));
+    loadStats();
+    loadUsers("active");
+  } finally {
+    spinner.classList.add("d-none");
+    btn.disabled = false;
+  }
+});
+
+// ─── Offboard ────────────────────────────────────────────────────────────────
+
+function openOffboard(uid, name, upn) {
+  $("offboard-uid").value = uid;
+  $("offboard-upn").value = upn || "";
+  $("offboard-name-display").textContent = name;
+  $("off-ticket").value = "";
+  $("off-end").value = "";
+  $("off-ticket").classList.remove("is-invalid");
+  $("off-end").classList.remove("is-invalid");
+  $("off-reason").value = "";
+  $("off-notes").value = "";
+  $("off-disable-ad").checked = adConnected;
+  $("off-remove-license").checked = graphConnected;
+  updateConnBadge("off-ad-badge", adConnected);
+  updateConnBadge("off-graph-badge", graphConnected);
+  hideAlert("offboardAlert");
+  offboardModal.show();
+}
+
+$("btnSubmitOffboard").addEventListener("click", async () => {
+  hideAlert("offboardAlert");
+  const uid    = $("offboard-uid").value;
+  const upn    = $("offboard-upn").value;
+  const ticket = $("off-ticket").value.trim();
+  const end    = $("off-end").value;
+  $("off-ticket").classList.toggle("is-invalid", !ticket);
+  $("off-end").classList.toggle("is-invalid", !end);
+  if (!ticket || !end) {
+    showAlert("offboardAlert", "Please complete all required fields marked with *.");
+    (!ticket ? $("off-ticket") : $("off-end")).focus();
+    return;
+  }
+
+  const spinner = $("offSpinner");
+  spinner.classList.remove("d-none");
+  $("btnSubmitOffboard").disabled = true;
+
+  try {
+    // Step 1: Update local record
+    const r = await fetch(`/api/users/${uid}/offboard`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ticket, end_date: end,
+        reason: $("off-reason").value,
+        notes:  $("off-notes").value.trim(),
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok) { showAlert("offboardAlert", data.error || "Failed to offboard user."); return; }
+
+    const msgs = [data.message];
+
+    // Step 2: Disable AD account (optional)
+    if ($("off-disable-ad").checked && upn) {
+      const adR = await fetch(`/api/ad/users/${encodeURIComponent(upn)}/disable`, { method: "POST" });
+      const adData = await adR.json();
+      msgs.push(adR.ok ? "AD account disabled." : `AD: ${adData.error}`);
+    }
+
+    // Step 3: Remove all M365 licenses (optional)
+    if ($("off-remove-license").checked && upn) {
+      const licR = await fetch(`/api/graph/users/${encodeURIComponent(upn)}/licenses`);
+      if (licR.ok) {
+        const licenses = await licR.json();
+        const removes = Array.isArray(licenses) ? licenses : [];
+        for (const lic of removes) {
+          await fetch(`/api/graph/users/${encodeURIComponent(upn)}/licenses/${lic.skuId}`, { method: "DELETE" });
+        }
+        if (removes.length) msgs.push(`${removes.length} license(s) removed.`);
+      }
+    }
+
+    offboardModal.hide();
+    showToast(msgs.join(" "));
+    loadStats();
+    loadUsers("active");
+  } finally {
+    spinner.classList.add("d-none");
+    $("btnSubmitOffboard").disabled = false;
+  }
+});
+
+// ─── Delete ──────────────────────────────────────────────────────────────────
+
+function openDelete(uid, name) {
+  $("delete-uid").value = uid;
+  $("delete-name-display").textContent = name;
+  deleteModal.show();
+}
+
+$("btnConfirmDelete").addEventListener("click", async () => {
+  const uid = $("delete-uid").value;
+  const r   = await fetch(`/api/users/${uid}`, { method: "DELETE" });
+  const data = await r.json();
+  if (!r.ok) { showToast(data.error || "Delete failed", false); return; }
+  deleteModal.hide();
+  showToast(data.message);
+  loadStats();
+  loadUsers("offboarded");
+});
+
+// ─── AD Users ────────────────────────────────────────────────────────────────
+
+let adUserSearchTimer;
+$("adUserSearch").addEventListener("input", () => {
+  clearTimeout(adUserSearchTimer);
+  adUserSearchTimer = setTimeout(loadADUsers, 300);
+});
+
+async function loadADUsers() {
+  const q = $("adUserSearch").value.trim();
+  const r = await fetch(`/api/ad/users${q ? "?q=" + encodeURIComponent(q) : ""}`);
+  const data = await r.json();
+
+  if (!r.ok || (data && data.error)) {
+    $("adUsersNotConnected").classList.remove("d-none");
+    $("adUsersTable").style.display = "none";
+    $("empty-adusers").classList.add("d-none");
+    return;
+  }
+
+  $("adUsersNotConnected").classList.add("d-none");
+  $("adUsersTable").style.display = "";
+  const tbody = $("tbody-adusers");
+  const empty = $("empty-adusers");
+  tbody.innerHTML = "";
+
+  const users = Array.isArray(data) ? data : [];
+  if (!users.length) { empty.classList.remove("d-none"); return; }
+  empty.classList.add("d-none");
+
+  users.forEach(u => {
+    const upn = u.UserPrincipalName || "";
+    const statusBadge = u.Enabled
+      ? `<span class="badge badge-active rounded-pill px-2">Enabled</span>`
+      : `<span class="badge badge-off rounded-pill px-2">Disabled</span>`;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><strong>${esc(u.DisplayName || u.Name)}</strong></td>
+      <td class="text-muted">${esc(upn)}</td>
+      <td>${esc(u.Department) || "—"}</td>
+      <td>${esc(u.Title) || "—"}</td>
+      <td>${statusBadge}</td>
+      <td>
+        ${upn ? `
+          <button class="btn btn-sm btn-outline-secondary py-0 me-1" onclick="viewADUser('${esc(upn)}')" title="View"><i class="bi bi-eye"></i></button>
+          <button class="btn btn-sm btn-outline-primary py-0 me-1" onclick="openEditADUser('${esc(upn)}')" title="Edit"><i class="bi bi-pencil"></i></button>
+          ${u.Enabled
+            ? `<button class="btn btn-sm btn-outline-danger py-0" onclick="openDisableAD('${esc(upn)}')" title="Disable"><i class="bi bi-person-dash"></i></button>`
+            : `<button class="btn btn-sm btn-outline-success py-0" onclick="enableADUser('${esc(upn)}')" title="Enable"><i class="bi bi-person-check"></i></button>`}
+          ${IS_ADMIN ? `<button class="btn btn-sm btn-outline-danger py-0 ms-1" onclick="openDeleteAD('${esc(upn)}')" title="Delete from AD"><i class="bi bi-trash"></i></button>` : ""}`
+          : `<span class="text-muted small" title="No UPN — system account">—</span>`}
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function viewADUser(upn) {
+  $("viewModalBody").innerHTML = "Loading…";
+  viewModal.show();
+  const r = await fetch(`/api/ad/users/${encodeURIComponent(upn)}`);
+  const u = await r.json();
+  if (!r.ok) {
+    $("viewModalBody").innerHTML = `<div class="text-danger">${esc(u.error || "Failed to load AD user.")}</div>`;
+    return;
+  }
+  const badge = u.Enabled
+    ? `<span class="badge badge-active rounded-pill px-2">Enabled</span>`
+    : `<span class="badge badge-off rounded-pill px-2">Disabled</span>`;
+  const row = (label, val) =>
+    `<div class="col-md-6 mb-2"><span class="text-muted small d-block">${label}</span><strong class="text-break">${esc(val)||"—"}</strong></div>`;
+  $("viewModalBody").innerHTML = `
+    <div class="d-flex align-items-center gap-3 mb-4">
+      <div style="width:56px;height:56px;border-radius:50%;background:#dbeafe;display:flex;align-items:center;justify-content:center;font-size:1.6rem;color:#1d4ed8">
+        ${esc((u.DisplayName||u.Name||"?")[0]).toUpperCase()}
+      </div>
+      <div>
+        <h5 class="mb-0">${esc(u.DisplayName || u.Name)}</h5>
+        <div class="text-muted small">${esc(u.UserPrincipalName)}</div>
+        <div class="mt-1">${badge}</div>
+      </div>
+    </div>
+    <div class="row">
+      ${row("SAM Account", u.SamAccountName)}
+      ${row("Email", u.EmailAddress)}
+      ${row("Department", u.Department)}
+      ${row("Job Title", u.Title)}
+      ${row("Manager", u.ManagerUpn)}
+      ${row("Phone", u.OfficePhone)}
+      ${row("Mobile", u.MobilePhone)}
+      ${row("Country", u.Country)}
+      ${row("Created", fmtDate(u.Created))}
+    </div>
+    ${u.Description ? `<hr/><div class="text-muted small">Description</div><div>${esc(u.Description)}</div>` : ""}
+    <hr/>
+    <div class="text-muted small">Distinguished Name</div>
+    <div class="small">${esc(u.DistinguishedName)}</div>`;
+}
+
+function openDisableAD(upn) {
+  $("adDisable-upn").value = upn;
+  $("adDisable-upn-display").textContent = upn;
+  adDisableModal.show();
+}
+
+async function enableADUser(upn) {
+  const r = await fetch(`/api/ad/users/${encodeURIComponent(upn)}/enable`, { method: "POST" });
+  const data = await r.json();
+  if (!r.ok) { showToast(data.error || "Enable failed", false); return; }
+  showToast(data.message);
+  loadADUsers();
+}
+
+function openDeleteAD(upn) {
+  $("adDelete-upn").value = upn;
+  $("adDelete-upn-display").textContent = upn;
+  adDeleteModal.show();
+}
+
+$("btnConfirmADDelete").addEventListener("click", async () => {
+  const upn = $("adDelete-upn").value;
+  const btn = $("btnConfirmADDelete");
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/api/ad/users/${encodeURIComponent(upn)}`, { method: "DELETE" });
+    const data = await r.json();
+    if (!r.ok) { showToast(data.error || "Delete failed", false); return; }
+    adDeleteModal.hide();
+    showToast(data.message);
+    loadADUsers();
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+const AD_EDIT_FIELDS = ["display","given","sn","dept","title","manager","email","phone","mobile","country","description"];
+
+async function openEditADUser(upn) {
+  hideAlert("adEditAlert");
+  $("adEdit-upn").value = upn;
+  $("adEdit-upn-display").textContent = upn;
+  AD_EDIT_FIELDS.forEach(f => $("adEdit-" + f).value = "");
+  // UPN local part + suffix dropdown
+  const parts = upn.split("@");
+  $("adEdit-upn-user").textContent = parts[0] || "";
+  const curSuffix = parts[1] || "";
+  const sel = $("adEdit-upn-domain");
+  sel.disabled = !IS_ADMIN;   // only admins may change the UPN suffix
+  sel.innerHTML = curSuffix ? `<option value="${esc(curSuffix)}" selected>@${esc(curSuffix)}</option>` : "";
+  fetch("/api/ad/upn-suffixes").then(r => r.json()).then(list => {
+    let arr = Array.isArray(list) ? list : [];
+    if (curSuffix && !arr.includes(curSuffix)) arr = [curSuffix, ...arr];
+    sel.innerHTML = arr.map(s => `<option value="${esc(s)}"${s === curSuffix ? " selected" : ""}>@${esc(s)}</option>`).join("");
+  }).catch(() => { /* keep current suffix only */ });
+  adEditModal.show();
+  try {
+    const r = await fetch(`/api/ad/users/${encodeURIComponent(upn)}`);
+    const u = await r.json();
+    if (!r.ok) { showAlert("adEditAlert", u.error || "Failed to load user."); return; }
+    $("adEdit-display").value     = u.DisplayName || "";
+    $("adEdit-given").value       = u.GivenName || "";
+    $("adEdit-sn").value          = u.Surname || "";
+    $("adEdit-dept").value        = u.Department || "";
+    $("adEdit-title").value       = u.Title || "";
+    $("adEdit-manager").value     = u.ManagerUpn || "";
+    $("adEdit-email").value       = u.EmailAddress || "";
+    $("adEdit-phone").value       = u.OfficePhone || "";
+    $("adEdit-mobile").value      = u.MobilePhone || "";
+    $("adEdit-country").value     = u.Country || "";
+    $("adEdit-description").value = u.Description || "";
+  } catch {
+    showAlert("adEditAlert", "Failed to load user.");
+  }
+}
+
+$("btnSaveADEdit").addEventListener("click", async () => {
+  hideAlert("adEditAlert");
+  const upn = $("adEdit-upn").value;
+  const spinner = $("adEditSpinner");
+  spinner.classList.remove("d-none");
+  const btn = $("btnSaveADEdit");
+  btn.disabled = true;
+  try {
+    const payload = {
+      display_name: $("adEdit-display").value.trim(),
+      given_name:   $("adEdit-given").value.trim(),
+      surname:      $("adEdit-sn").value.trim(),
+      department:   $("adEdit-dept").value.trim(),
+      title:        $("adEdit-title").value.trim(),
+      manager:      $("adEdit-manager").value.trim(),
+      email:        $("adEdit-email").value.trim(),
+      phone:        $("adEdit-phone").value.trim(),
+      mobile:       $("adEdit-mobile").value.trim(),
+      country:      $("adEdit-country").value.trim(),
+      description:  $("adEdit-description").value.trim(),
+    };
+    // Include a UPN change only when the suffix actually changed.
+    const local = $("adEdit-upn-user").textContent;
+    const newSuffix = $("adEdit-upn-domain").value;
+    const newUpn = (local && newSuffix) ? `${local}@${newSuffix}` : "";
+    if (newUpn && newUpn !== upn) payload.new_upn = newUpn;
+
+    const r = await fetch(`/api/ad/users/${encodeURIComponent(upn)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await r.json();
+    if (!r.ok) { showAlert("adEditAlert", data.error || "Update failed."); return; }
+    adEditModal.hide();
+    showToast(data.message);
+    loadADUsers();
+  } finally {
+    spinner.classList.add("d-none");
+    btn.disabled = false;
+  }
+});
+
+$("btnConfirmADDisable").addEventListener("click", async () => {
+  const upn = $("adDisable-upn").value;
+  const btn = $("btnConfirmADDisable");
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/api/ad/users/${encodeURIComponent(upn)}/disable`, { method: "POST" });
+    const data = await r.json();
+    if (!r.ok) { showToast(data.error || "Disable failed", false); return; }
+    adDisableModal.hide();
+    showToast(data.message);
+    loadADUsers();
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ─── AD Groups ───────────────────────────────────────────────────────────────
+
+let adGroupSearchTimer;
+$("adGroupSearch").addEventListener("input", () => {
+  clearTimeout(adGroupSearchTimer);
+  adGroupSearchTimer = setTimeout(loadADGroups, 300);
+});
+
+async function loadADGroups() {
+  const q = $("adGroupSearch").value.trim();
+  const r = await fetch(`/api/ad/groups${q ? "?q=" + encodeURIComponent(q) : ""}`);
+  const data = await r.json();
+
+  if (!r.ok || (data && data.error)) {
+    $("adGroupsNotConnected").classList.remove("d-none");
+    $("adGroupsTable").style.display = "none";
+    return;
+  }
+
+  $("adGroupsNotConnected").classList.add("d-none");
+  $("adGroupsTable").style.display = "";
+  const tbody = $("tbody-adgroups");
+  const empty = $("empty-adgroups");
+  tbody.innerHTML = "";
+
+  const groups = Array.isArray(data) ? data : [];
+  if (!groups.length) { empty.classList.remove("d-none"); return; }
+  empty.classList.add("d-none");
+
+  groups.forEach(g => {
+    const typeBadge = g.GroupCategory === "Security"
+      ? `<span class="badge badge-security rounded-pill px-2">Security</span>`
+      : `<span class="badge badge-dist rounded-pill px-2">Distribution</span>`;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><strong>${esc(g.Name)}</strong></td>
+      <td class="text-muted">${esc(g.SamAccountName)}</td>
+      <td>${typeBadge}</td>
+      <td><span class="badge badge-ad rounded-pill px-2">${esc(g.GroupScope||"")}</span></td>
+      <td class="small text-muted">${esc(g.Description||"—")}</td>
+      <td>
+        <button class="btn btn-sm btn-outline-secondary py-0"
+          onclick="openGroupMembers('${esc(g.SamAccountName)}','${esc(g.Name)}','ad')" title="Members">
+          <i class="bi bi-people"></i>
+        </button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+// ─── M365 Groups ─────────────────────────────────────────────────────────────
+
+let m365GroupSearchTimer;
+$("m365GroupSearch").addEventListener("input", () => {
+  clearTimeout(m365GroupSearchTimer);
+  m365GroupSearchTimer = setTimeout(loadM365Groups, 300);
+});
+
+async function loadM365Groups() {
+  const q = $("m365GroupSearch").value.trim();
+  const r = await fetch(`/api/graph/groups${q ? "?q=" + encodeURIComponent(q) : ""}`);
+  const data = await r.json();
+
+  if (!r.ok || (data && data.error)) {
+    $("m365GroupsNotConnected").classList.remove("d-none");
+    $("m365GroupsTable").style.display = "none";
+    return;
+  }
+
+  $("m365GroupsNotConnected").classList.add("d-none");
+  $("m365GroupsTable").style.display = "";
+  const tbody = $("tbody-m365groups");
+  const empty = $("empty-m365groups");
+  tbody.innerHTML = "";
+
+  const groups = Array.isArray(data) ? data : [];
+  if (!groups.length) { empty.classList.remove("d-none"); return; }
+  empty.classList.add("d-none");
+
+  groups.forEach(g => {
+    const isM365 = (g.groupTypes || []).includes("Unified");
+    const typeBadge = isM365
+      ? `<span class="badge badge-ad rounded-pill px-2">M365</span>`
+      : `<span class="badge badge-security rounded-pill px-2">Security</span>`;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><strong>${esc(g.displayName)}</strong></td>
+      <td>${typeBadge}</td>
+      <td>${g.mailEnabled ? '<i class="bi bi-check-circle text-success"></i>' : '<i class="bi bi-x-circle text-muted"></i>'}</td>
+      <td class="small text-muted">${esc(g.description||"—")}</td>
+      <td>
+        <button class="btn btn-sm btn-outline-secondary py-0"
+          onclick="openGroupMembers('${esc(g.id)}','${esc(g.displayName)}','m365')" title="Members">
+          <i class="bi bi-people"></i>
+        </button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+// ─── Group Members Modal ──────────────────────────────────────────────────────
+
+function openGroupMembers(id, name, type) {
+  $("groupModalId").value = id;
+  $("groupModalType").value = type;
+  $("groupModalName").textContent = name;
+  $("addMemberInput").value = "";
+  $("addMemberInput").placeholder = type === "ad" ? "SAM account name" : "User UPN";
+  hideAlert("groupAlert");
+  $("groupMembersLoading").style.display = "";
+  $("groupMembersTable").style.display = "none";
+  $("empty-group-members").classList.add("d-none");
+  groupModal.show();
+  loadGroupMembers(id, type);
+}
+
+async function loadGroupMembers(id, type) {
+  $("groupMembersLoading").style.display = "";
+  $("groupMembersTable").style.display = "none";
+
+  const endpoint = type === "ad"
+    ? `/api/ad/groups/${encodeURIComponent(id)}/members`
+    : `/api/graph/groups/${encodeURIComponent(id)}/members`;
+
+  const r = await fetch(endpoint);
+  const data = await r.json();
+
+  $("groupMembersLoading").style.display = "none";
+
+  if (!r.ok) {
+    showAlert("groupAlert", (data && data.error) || "Failed to load members.");
+    return;
+  }
+
+  const members = Array.isArray(data) ? data : [];
+  const tbody = $("tbody-group-members");
+  const empty = $("empty-group-members");
+  tbody.innerHTML = "";
+
+  if (!members.length) { empty.classList.remove("d-none"); return; }
+  empty.classList.add("d-none");
+  $("groupMembersTable").style.display = "";
+
+  members.forEach(m => {
+    const nameVal = type === "ad" ? (m.Name || m.name || "") : (m.displayName || "");
+    const idVal   = type === "ad" ? (m.SamAccountName || m.sAMAccountName || "") : (m.userPrincipalName || m.id || "");
+    const objType = type === "ad" ? (m.objectClass || "user") : (m["@odata.type"] || "").replace("#microsoft.graph.", "");
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${esc(nameVal)}</td>
+      <td class="text-muted small">${esc(idVal)}</td>
+      <td><span class="badge badge-ad rounded-pill px-2">${esc(objType)}</span></td>
+      <td>
+        <button class="btn btn-sm btn-outline-danger py-0"
+          onclick="removeMemberFromGroup('${esc(type === "ad" ? m.SamAccountName || m.name : m.id)}','${esc($("groupModalId").value)}')"
+          title="Remove">
+          <i class="bi bi-person-dash"></i>
+        </button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function addMemberToGroup() {
+  const id   = $("groupModalId").value;
+  const type = $("groupModalType").value;
+  const val  = $("addMemberInput").value.trim();
+  if (!val) return;
+
+  const endpoint = type === "ad"
+    ? `/api/ad/groups/${encodeURIComponent(id)}/members`
+    : `/api/graph/groups/${encodeURIComponent(id)}/members`;
+  const body = type === "ad" ? { user_sam: val } : { upn: val };
+
+  const r = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await r.json();
+  if (!r.ok) { showAlert("groupAlert", data.error || "Failed to add member."); return; }
+  hideAlert("groupAlert");
+  $("addMemberInput").value = "";
+  loadGroupMembers(id, type);
+}
+
+async function removeMemberFromGroup(memberId, groupId) {
+  const type = $("groupModalType").value;
+  const id   = groupId || $("groupModalId").value;
+
+  const endpoint = type === "ad"
+    ? `/api/ad/groups/${encodeURIComponent(id)}/members/${encodeURIComponent(memberId)}`
+    : `/api/graph/groups/${encodeURIComponent(id)}/members/${encodeURIComponent(memberId)}`;
+
+  const r = await fetch(endpoint, { method: "DELETE" });
+  const data = await r.json();
+  if (!r.ok) { showAlert("groupAlert", data.error || "Failed to remove member."); return; }
+  hideAlert("groupAlert");
+  loadGroupMembers(id, type);
+}
+
+// ─── Licenses Tab ─────────────────────────────────────────────────────────────
+
+async function loadLicenses() {
+  if (!graphConnected) {
+    $("licensesNotConnected").classList.remove("d-none");
+    $("licensesContent").classList.add("d-none");
+    return;
+  }
+  $("licensesNotConnected").classList.add("d-none");
+  $("licensesContent").classList.remove("d-none");
+
+  // License pool cards
+  try {
+    const r = await fetch("/api/graph/licenses");
+    const skus = await r.json();
+    const cards = $("licenseCards");
+    cards.innerHTML = "";
+
+    (Array.isArray(skus) ? skus : []).forEach(sku => {
+      const used  = sku.consumedUnits ?? 0;
+      const total = sku.prepaidUnits?.enabled ?? 0;
+      const pct   = total > 0 ? Math.round((used / total) * 100) : 0;
+      const col = document.createElement("div");
+      col.className = "col-6 col-md-3";
+      col.innerHTML = `
+        <div class="license-card card p-3">
+          <div class="fw-semibold small mb-1">${esc(sku.skuPartNumber)}</div>
+          <div class="d-flex justify-content-between text-muted small mb-1">
+            <span>${used} used</span><span>${total} total</span>
+          </div>
+          <div class="usage-bar"><div class="usage-fill" style="width:${pct}%"></div></div>
+          <div class="text-muted small mt-1">${pct}% utilised</div>
+        </div>`;
+      cards.appendChild(col);
+    });
+  } catch { /* silent */ }
+
+  // User license table (local users)
+  const ur = await fetch("/api/users?status=active");
+  const users = await ur.json();
+  const tbody = $("tbody-licenses");
+  const empty = $("empty-licenses");
+  tbody.innerHTML = "";
+
+  if (!users.length) { empty.classList.remove("d-none"); return; }
+  empty.classList.add("d-none");
+
+  users.forEach(u => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><strong>${esc(u.full_name)}</strong></td>
+      <td class="text-muted small">${esc(u.upn)}</td>
+      <td>${esc(u.license) || "<span class='text-muted'>—</span>"}</td>
+      <td id="glics-${u.id}"><span class="text-muted small">Loading…</span></td>
+      <td>
+        <button class="btn btn-sm btn-outline-primary py-0"
+          onclick="openAssignLicModal('${esc(u.upn)}','${esc(u.full_name)}')" title="Manage">
+          <i class="bi bi-key me-1"></i>Manage
+        </button>
+      </td>`;
+    tbody.appendChild(tr);
+    loadUserLicenseBadges(u.upn, `glics-${u.id}`);
+  });
+}
+
+async function loadUserLicenseBadges(upn, cellId) {
+  try {
+    const r = await fetch(`/api/graph/users/${encodeURIComponent(upn)}/licenses`);
+    const lics = await r.json();
+    const cell = $(cellId);
+    if (!cell) return;
+    const arr = Array.isArray(lics) ? lics : [];
+    cell.innerHTML = arr.length
+      ? arr.map(l => `<span class="badge badge-ad rounded-pill me-1">${esc(l.skuPartNumber)}</span>`).join("")
+      : `<span class="text-muted small">None</span>`;
+  } catch {
+    const cell = $(cellId);
+    if (cell) cell.innerHTML = `<span class="text-muted small">—</span>`;
+  }
+}
+
+// ─── Assign License Modal ─────────────────────────────────────────────────────
+
+async function openAssignLicModal(upn, name) {
+  $("licModalUpn").value = upn;
+  $("licModalUser").textContent = `${name} (${upn})`;
+  $("currentLicenses").innerHTML = "Loading…";
+  hideAlert("licAlert");
+  populateSkuSelect("licSkuSelect");
+  assignLicModal.show();
+
+  try {
+    const r = await fetch(`/api/graph/users/${encodeURIComponent(upn)}/licenses`);
+    const lics = await r.json();
+    const arr = Array.isArray(lics) ? lics : [];
+    if (!arr.length) {
+      $("currentLicenses").innerHTML = "<em>No licenses assigned</em>";
+    } else {
+      $("currentLicenses").innerHTML = arr.map(l =>
+        `<span class="badge badge-ad rounded-pill me-1 mb-1">${esc(l.skuPartNumber)}</span>
+         <button class="btn btn-link btn-sm text-danger p-0 me-2" onclick="removeLicenseFromUser('${esc(upn)}','${esc(l.skuId)}')">
+           <i class="bi bi-x-circle"></i>
+         </button>`
+      ).join("");
+    }
+  } catch {
+    $("currentLicenses").innerHTML = "<em>Could not load</em>";
+  }
+}
+
+async function assignLicense() {
+  const upn   = $("licModalUpn").value;
+  const skuId = $("licSkuSelect").value;
+  if (!skuId) { showAlert("licAlert", "Select a license SKU."); return; }
+  const r = await fetch(`/api/graph/users/${encodeURIComponent(upn)}/licenses`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sku_id: skuId }),
+  });
+  const data = await r.json();
+  if (!r.ok) { showAlert("licAlert", data.error || "Failed to assign license."); return; }
+  hideAlert("licAlert");
+  showToast(data.message);
+  await openAssignLicModal(upn, $("licModalUser").textContent.split(" (")[0]);
+}
+
+async function removeLicenseFromUser(upn, skuId) {
+  const r = await fetch(`/api/graph/users/${encodeURIComponent(upn)}/licenses/${encodeURIComponent(skuId)}`, {
+    method: "DELETE",
+  });
+  const data = await r.json();
+  if (!r.ok) { showAlert("licAlert", data.error || "Failed to remove license."); return; }
+  showToast(data.message);
+  await openAssignLicModal(upn, $("licModalUser").textContent.split(" (")[0]);
+}
+
+// ─── Search ──────────────────────────────────────────────────────────────────
+
+let searchTimer;
+$("searchInput").addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    if (currentTab === "active" || currentTab === "offboarded") loadUsers(currentTab);
+  }, 300);
+});
+
+// ─── Theme (per-browser: light / dark / system) ───────────────────────────────
+
+const _darkMq = window.matchMedia("(prefers-color-scheme: dark)");
+
+function getThemePref() { return localStorage.getItem("theme") || "system"; }
+
+function applyTheme(mode) {
+  const dark = mode === "dark" || (mode === "system" && _darkMq.matches);
+  document.documentElement.setAttribute("data-bs-theme", dark ? "dark" : "light");
+}
+
+function setThemePref(mode) {
+  localStorage.setItem("theme", mode);
+  applyTheme(mode);
+}
+
+// Keep up with the OS when in "system" mode.
+_darkMq.addEventListener("change", () => { if (getThemePref() === "system") applyTheme("system"); });
+
+// Wire the selector.
+document.querySelectorAll('#themeButtons input[name="theme"]').forEach(r => {
+  r.addEventListener("change", () => setThemePref(r.value));
+});
+
+// ─── Settings (org logo) ──────────────────────────────────────────────────────
+
+$("btnSettings").addEventListener("click", async () => {
+  hideAlert("settingsAlert");
+  // Reflect the current theme choice in the selector.
+  const pref = getThemePref();
+  const radio = $("theme-" + pref);
+  if (radio) radio.checked = true;
+  if ($("logoFile")) $("logoFile").value = "";   // admin-only field
+  const preview = $("settingsLogoPreview");
+  const none    = $("settingsLogoNone");
+  preview.style.display = "none";
+  none.style.display = "";
+  try {
+    const r = await fetch("/api/settings");
+    const d = await r.json();
+    if (d.logo_url) {
+      preview.src = d.logo_url;
+      preview.style.display = "";
+      none.style.display = "none";
+    }
+  } catch { /* ignore */ }
+  if (IS_ADMIN) loadUpnSuffixes();
+  settingsModal.show();
+});
+
+// ─── UPN suffix management (admin) ─────────────────────────────────────────────
+
+async function loadUpnSuffixes() {
+  const ul = $("upnSuffixList");
+  if (!ul) return;
+  ul.innerHTML = '<li class="list-group-item text-muted">Loading…</li>';
+  try {
+    const r = await fetch("/api/ad/upn-suffixes");
+    const list = await r.json();
+    const arr = Array.isArray(list) ? list : [];
+    ul.innerHTML = arr.length ? arr.map(s => `
+      <li class="list-group-item d-flex justify-content-between align-items-center">
+        <span>${esc(s)}</span>
+        <button class="btn btn-sm btn-outline-danger py-0" title="Remove" onclick="removeUpnSuffix('${esc(s)}')"><i class="bi bi-x-lg"></i></button>
+      </li>`).join("") : '<li class="list-group-item text-muted">None found.</li>';
+  } catch {
+    ul.innerHTML = '<li class="list-group-item text-danger">Failed to load.</li>';
+  }
+}
+
+async function removeUpnSuffix(suffix) {
+  const r = await fetch(`/api/ad/upn-suffixes/${encodeURIComponent(suffix)}`, { method: "DELETE" });
+  const d = await r.json();
+  if (!r.ok) { showAlert("settingsAlert", d.error || "Remove failed."); return; }
+  hideAlert("settingsAlert");
+  showToast(d.message);
+  loadUpnSuffixes();
+}
+
+if ($("btnAddUpnSuffix")) {
+  $("btnAddUpnSuffix").addEventListener("click", async () => {
+    const inp = $("newUpnSuffix");
+    const suffix = inp.value.trim();
+    if (!suffix) { showAlert("settingsAlert", "Enter a domain.", "warning"); return; }
+    const sp = $("upnSuffixSpinner");
+    sp.classList.remove("d-none");
+    $("btnAddUpnSuffix").disabled = true;
+    try {
+      const r = await fetch("/api/ad/upn-suffixes", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ suffix }),
+      });
+      const d = await r.json();
+      if (!r.ok) { showAlert("settingsAlert", d.error || "Add failed."); return; }
+      hideAlert("settingsAlert");
+      inp.value = "";
+      showToast(d.message);
+      loadUpnSuffixes();
+    } finally {
+      sp.classList.add("d-none");
+      $("btnAddUpnSuffix").disabled = false;
+    }
+  });
+}
+
+if ($("btnUploadLogo")) {
+  $("btnUploadLogo").addEventListener("click", async () => {
+    const file = $("logoFile").files[0];
+    if (!file) { showAlert("settingsAlert", "Choose an image file first.", "warning"); return; }
+    const spinner = $("logoSpinner");
+    spinner.classList.remove("d-none");
+    $("btnUploadLogo").disabled = true;
+    try {
+      const fd = new FormData();
+      fd.append("logo", file);
+      const r = await fetch("/api/settings/logo", { method: "POST", body: fd });
+      const d = await r.json();
+      if (!r.ok) { showAlert("settingsAlert", d.error || "Upload failed."); return; }
+      showToast(d.message);
+      location.reload();   // refresh navbar with the new logo
+    } finally {
+      spinner.classList.add("d-none");
+      $("btnUploadLogo").disabled = false;
+    }
+  });
+}
+
+if ($("btnRemoveLogo")) {
+  $("btnRemoveLogo").addEventListener("click", async () => {
+    const r = await fetch("/api/settings/logo", { method: "DELETE" });
+    const d = await r.json();
+    if (!r.ok) { showAlert("settingsAlert", d.error || "Remove failed."); return; }
+    showToast(d.message);
+    location.reload();
+  });
+}
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+
+checkConnectivity();
+loadStats();
+loadUsers("active");
+</script>
+</body>
+</html>
