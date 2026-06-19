@@ -6,7 +6,6 @@ import json
 import os
 import re
 import secrets
-import sqlite3
 import threading
 import time
 from datetime import datetime, timedelta
@@ -14,6 +13,8 @@ from pathlib import Path
 from typing import Any
 
 import msal
+import psycopg2
+import psycopg2.extras
 from flask import (Flask, Response, g, has_request_context, jsonify, redirect,
                    render_template, request, send_from_directory, session, url_for)
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -43,7 +44,10 @@ APP_DIR = Path(__file__).resolve().parent
 # directory for local development.
 DATA_DIR = Path(os.getenv("DATA_DIR", str(APP_DIR)))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-DB_PATH = DATA_DIR / "users.db"
+
+# PostgreSQL connection string (Azure Database for PostgreSQL Flexible Server).
+# e.g. postgresql://user:pass@server.postgres.database.azure.com:5432/dbname?sslmode=require
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 # Org-standard logo (uploaded in Settings, shown to all users), served via /branding.
 BRANDING_DIR     = DATA_DIR / "branding"
@@ -255,13 +259,59 @@ def logout() -> Any:
     return redirect(url_for("login"))
 
 
-# ── SQLite helpers ──────────────────────────────────────────────────────────────
+# ── PostgreSQL helpers ────────────────────────────────────────────────────────
+# Raise this for a duplicate-key / constraint violation, replacing
+# sqlite3.IntegrityError throughout the app.
+IntegrityError = psycopg2.IntegrityError
 
-def get_db() -> sqlite3.Connection:
+
+class PGConnection:
+    """Thin sqlite3-compatible adapter over a psycopg2 connection so the existing
+    call sites keep working unchanged:
+      • ``conn.execute(sql, params)`` translates ``?`` placeholders to ``%s`` and
+        returns a cursor (rows are RealDictRow, so ``row["col"]`` and ``dict(row)``
+        behave like sqlite3.Row).
+      • ``commit()/rollback()/close()`` pass through to the underlying connection.
+    """
+
+    def __init__(self, conn: "psycopg2.extensions.connection") -> None:
+        self._conn = conn
+
+    def execute(self, sql: str, params: Any = ()) -> "psycopg2.extras.RealDictCursor":
+        cur = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(sql.replace("?", "%s"), params)
+        return cur
+
+    def executescript(self, sql: str) -> None:
+        # psycopg2 executes multiple ';'-separated statements in a single call,
+        # standing in for sqlite3's executescript().
+        self._conn.cursor().execute(sql)
+
+    def commit(self) -> None:
+        self._conn.commit()
+
+    def rollback(self) -> None:
+        self._conn.rollback()
+
+    def close(self) -> None:
+        self._conn.close()
+
+
+def _connect() -> PGConnection:
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL is not set")
+    # Azure PostgreSQL Flexible Server requires TLS; force it unless the caller
+    # already specified an sslmode in the connection string.
+    kwargs: dict[str, Any] = {}
+    if "sslmode=" not in DATABASE_URL:
+        kwargs["sslmode"] = "require"
+    return PGConnection(psycopg2.connect(DATABASE_URL, **kwargs))
+
+
+def get_db() -> PGConnection:
     db = getattr(g, "_database", None)
     if db is None:
-        db = g._database = sqlite3.connect(str(DB_PATH))
-        db.row_factory = sqlite3.Row
+        db = g._database = _connect()
     return db
 
 
@@ -277,7 +327,7 @@ def init_db() -> None:
         db = get_db()
         db.executescript("""
             CREATE TABLE IF NOT EXISTS users (
-                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                id                SERIAL PRIMARY KEY,
                 full_name         TEXT NOT NULL,
                 upn               TEXT UNIQUE NOT NULL,
                 department        TEXT DEFAULT '',
@@ -296,7 +346,7 @@ def init_db() -> None:
             );
 
             CREATE TABLE IF NOT EXISTS audit_log (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                id          SERIAL PRIMARY KEY,
                 user_id     INTEGER,
                 full_name   TEXT NOT NULL,
                 action      TEXT NOT NULL,
@@ -307,7 +357,7 @@ def init_db() -> None:
             );
 
             CREATE TABLE IF NOT EXISTS scheduled_tasks (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                id           SERIAL PRIMARY KEY,
                 task_type    TEXT NOT NULL,
                 upn          TEXT NOT NULL,
                 payload      TEXT DEFAULT '',
@@ -329,8 +379,8 @@ def init_db() -> None:
                 value TEXT DEFAULT ''
             );
         """)
-        # Migration: add new columns to existing databases
-        existing = {row[1] for row in db.execute("PRAGMA table_info(users)").fetchall()}
+        # Migration: add newer columns to pre-existing databases. Postgres supports
+        # ADD COLUMN IF NOT EXISTS, so this is idempotent without introspection.
         new_cols = [
             ("phone",             "TEXT DEFAULT ''"),
             ("mobile",            "TEXT DEFAULT ''"),
@@ -339,12 +389,8 @@ def init_db() -> None:
             ("contract_end_date", "TEXT DEFAULT ''"),
         ]
         for col_name, col_def in new_cols:
-            if col_name not in existing:
-                db.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_def}")
-        # Migration: add actor column to existing audit_log tables
-        audit_cols = {row[1] for row in db.execute("PRAGMA table_info(audit_log)").fetchall()}
-        if "actor" not in audit_cols:
-            db.execute("ALTER TABLE audit_log ADD COLUMN actor TEXT DEFAULT ''")
+            db.execute(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col_name} {col_def}")
+        db.execute("ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS actor TEXT DEFAULT ''")
         db.commit()
 
 
@@ -370,7 +416,12 @@ def log_audit(action: str, target: str = "", details: str = "", ticket: str = ""
         )
         db.commit()
     except Exception:
-        pass
+        # A failed statement aborts the Postgres transaction; roll back so the
+        # rest of the request can keep using the same connection.
+        try:
+            get_db().rollback()
+        except Exception:
+            pass
 
 
 # AD-edit field -> local users column. Mirrors AD edits to the local record.
@@ -416,7 +467,11 @@ def get_setting(key: str, default: str = "") -> str:
 
 def set_setting(key: str, value: str) -> None:
     db = get_db()
-    db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", (key, value))
+    db.execute(
+        "INSERT INTO settings (key, value) VALUES (?,?)"
+        " ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value",
+        (key, value),
+    )
     db.commit()
 
 
@@ -457,7 +512,7 @@ _COUNTRY_CODES = {
 }
 
 
-def usage_location_for(upn: str, db: sqlite3.Connection) -> str:
+def usage_location_for(upn: str, db: PGConnection) -> str:
     """A 2-letter ISO usageLocation is required before assigning an M365 license.
     Resolve from the user's Country (code or name), then DEFAULT_USAGE_LOCATION."""
     row = db.execute("SELECT country FROM users WHERE LOWER(upn)=LOWER(?)", (upn,)).fetchone()
@@ -592,6 +647,7 @@ def onboard_user() -> Any:
                license, start_date, notes, phone, mobile, country,
                description, contract_end_date, status, created_at, updated_at)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)
+            RETURNING id
             """,
             (
                 full_name, upn,
@@ -610,13 +666,14 @@ def onboard_user() -> Any:
                 ts, ts,
             ),
         )
-        uid = cur.lastrowid
+        uid = cur.fetchone()["id"]
         db.execute(
             "INSERT INTO audit_log (user_id, full_name, action, details, ticket, actor, timestamp) VALUES (?,?,?,?,?,?,?)",
             (uid, full_name, "onboarded", f"Onboarded: {upn}", data.get("ticket", ""), current_actor(), ts),
         )
         db.commit()
-    except sqlite3.IntegrityError:
+    except IntegrityError:
+        db.rollback()
         return jsonify({"error": f"A user with UPN '{upn}' already exists"}), 409
     return jsonify({"id": uid, "message": f"{full_name} has been onboarded"}), 201
 
@@ -867,7 +924,9 @@ def ad_disable_user(upn: str) -> Any:
         # Remember the groups so a later enable can restore them.
         db = get_db()
         db.execute(
-            "INSERT OR REPLACE INTO ad_disabled_groups (upn, groups_json, updated_at) VALUES (?,?,?)",
+            "INSERT INTO ad_disabled_groups (upn, groups_json, updated_at) VALUES (?,?,?)"
+            " ON CONFLICT (upn) DO UPDATE SET"
+            " groups_json=EXCLUDED.groups_json, updated_at=EXCLUDED.updated_at",
             (upn, json.dumps(removed), now_utc()),
         )
         db.commit()
@@ -1089,7 +1148,7 @@ def graph_remove_from_group(group_id: str, user_id: str) -> Any:
 
 # ── Scheduled-task worker ─────────────────────────────────────────────────────
 
-def _run_scheduled_task(conn: sqlite3.Connection, task: sqlite3.Row) -> None:
+def _run_scheduled_task(conn: PGConnection, task: Any) -> None:
     ts = now_utc()
     try:
         if task["task_type"] == "assign_license":
@@ -1120,8 +1179,7 @@ def _scheduler_loop() -> None:
     atomically so it stays safe even if more than one worker is running."""
     while True:
         try:
-            conn = sqlite3.connect(str(DB_PATH))
-            conn.row_factory = sqlite3.Row
+            conn = _connect()
             due = conn.execute(
                 "SELECT * FROM scheduled_tasks WHERE status='pending' AND run_at <= ? ORDER BY run_at",
                 (now_utc(),),

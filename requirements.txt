@@ -3,3 +3,4 @@ msal>=1.28
 requests>=2.31
 python-dotenv>=1.0
 gunicorn>=21
+psycopg2-binary>=2.9
