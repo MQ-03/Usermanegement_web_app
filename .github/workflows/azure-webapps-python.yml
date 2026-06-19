@@ -9,7 +9,6 @@ on:
 env:
   AZURE_WEBAPP_NAME: your-app-name          # App Service name (without .azurewebsites.net)
   PYTHON_VERSION: '3.12'
-  STARTUP_COMMAND: 'gunicorn --bind=0.0.0.0:8000 --workers 1 --timeout 120 app:app'
 
 permissions:
   contents: read
@@ -65,4 +64,4 @@ jobs:
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE }}
-          startup-command: ${{ env.STARTUP_COMMAND }}
+          package: ./deploy
