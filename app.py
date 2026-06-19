@@ -587,12 +587,17 @@ def delete_logo() -> Any:
 @app.route("/api/stats")
 def stats() -> Any:
     db = get_db()
-    total      = db.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    active     = db.execute("SELECT COUNT(*) FROM users WHERE status='active'").fetchone()[0]
-    offboarded = db.execute("SELECT COUNT(*) FROM users WHERE status='offboarded'").fetchone()[0]
-    recent     = db.execute(
-        "SELECT COUNT(*) FROM users WHERE status='active' AND created_at >= date('now','-30 days')"
-    ).fetchone()[0]
+    # RealDictCursor rows are dict-like, so read the COUNT(*) by its column alias.
+    total      = db.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
+    active     = db.execute("SELECT COUNT(*) AS n FROM users WHERE status='active'").fetchone()["n"]
+    offboarded = db.execute("SELECT COUNT(*) AS n FROM users WHERE status='offboarded'").fetchone()["n"]
+    # created_at is stored as 'YYYY-MM-DD HH:MM:SS' text, so compare against a
+    # Python-computed cutoff (date('now',...) is SQLite-only and absent in Postgres).
+    cutoff = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
+    recent = db.execute(
+        "SELECT COUNT(*) AS n FROM users WHERE status='active' AND created_at >= ?",
+        (cutoff,),
+    ).fetchone()["n"]
     return jsonify({"total": total, "active": active, "offboarded": offboarded, "recent": recent})
 
 
@@ -614,7 +619,7 @@ def list_users() -> Any:
         params.extend([f"%{q}%", f"%{q}%", f"%{q}%"])
     if conditions:
         sql += " WHERE " + " AND ".join(conditions)
-    sql += " ORDER BY full_name COLLATE NOCASE"
+    sql += " ORDER BY LOWER(full_name)"
     rows = db.execute(sql, params).fetchall()
     return jsonify([dict(r) for r in rows])
 
