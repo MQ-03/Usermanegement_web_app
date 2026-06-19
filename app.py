@@ -15,7 +15,8 @@ from typing import Any
 
 import msal
 from flask import (Flask, Response, g, has_request_context, jsonify, redirect,
-                   render_template, request, session, url_for)
+                   render_template, request, send_from_directory, session, url_for)
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash
 
 try:
@@ -37,10 +38,15 @@ except Exception:
     _graph = None
 
 APP_DIR = Path(__file__).resolve().parent
-DB_PATH = APP_DIR / "users.db"
+# Persistent data lives under DATA_DIR (set DATA_DIR=/home/data on Azure App Service
+# so the DB and uploaded logo survive restarts and deployments). Defaults to the app
+# directory for local development.
+DATA_DIR = Path(os.getenv("DATA_DIR", str(APP_DIR)))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+DB_PATH = DATA_DIR / "users.db"
 
-# Org-standard logo (uploaded in Settings, shown to all users).
-BRANDING_DIR     = APP_DIR / "static" / "branding"
+# Org-standard logo (uploaded in Settings, shown to all users), served via /branding.
+BRANDING_DIR     = DATA_DIR / "branding"
 # SVG is intentionally excluded (script-in-SVG XSS risk when served same-origin).
 ALLOWED_LOGO_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
@@ -50,6 +56,14 @@ SYNC_DELAY_MINUTES = 45
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024  # 2 MB upload cap
+# Trust the App Service / reverse-proxy headers so https is detected correctly.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    # Set SESSION_COOKIE_SECURE=true in production (HTTPS).
+    SESSION_COOKIE_SECURE=os.getenv("SESSION_COOKIE_SECURE", "false").lower() in ("1", "true", "yes"),
+)
 
 # ── Authentication ────────────────────────────────────────────────────────────────
 # Session secret: set SECRET_KEY in .env to keep sessions valid across restarts.
@@ -80,7 +94,7 @@ SSO_ENABLED        = bool(AUTH_TENANT_ID and AUTH_CLIENT_ID and AUTH_CLIENT_SECR
 LOCAL_LOGIN_ENABLED = (not SSO_ENABLED) or bool(ADMIN_PASSWORD_HASH or ADMIN_PASSWORD)
 
 # Endpoints reachable without a session.
-_PUBLIC_ENDPOINTS = {"login", "logout", "auth_login", "auth_callback", "static"}
+_PUBLIC_ENDPOINTS = {"login", "logout", "auth_login", "auth_callback", "static", "branding_file"}
 # Endpoints exempt from CSRF (auth boundary / pre-session).
 _CSRF_EXEMPT      = {"login", "logout", "auth_login", "auth_callback", "static"}
 _CSRF_METHODS     = {"POST", "PUT", "PATCH", "DELETE"}
@@ -412,8 +426,14 @@ def logo_url() -> str:
     if not fname:
         return ""
     ver = get_setting("logo_updated", "")
-    url = url_for("static", filename=f"branding/{fname}")
+    url = url_for("branding_file", filename=fname)
     return f"{url}?v={ver}" if ver else url
+
+
+@app.route("/branding/<path:filename>")
+def branding_file(filename: str) -> Any:
+    """Serve the uploaded org logo from the persistent data directory."""
+    return send_from_directory(str(BRANDING_DIR), filename)
 
 
 @app.context_processor
@@ -1120,16 +1140,31 @@ def _scheduler_loop() -> None:
         time.sleep(60)
 
 
+_scheduler_started = False
+
+
 def start_scheduler() -> None:
+    """Start the background task worker once per process."""
+    global _scheduler_started
+    if _scheduler_started:
+        return
+    _scheduler_started = True
     threading.Thread(target=_scheduler_loop, daemon=True).start()
+
+
+# ── App bootstrap ─────────────────────────────────────────────────────────────
+# init_db is idempotent and runs in every process. When imported by gunicorn
+# (production) the __main__ block never executes, so start the scheduler here.
+# For `python app.py` (local dev) the __main__ block starts it, reloader-aware.
+init_db()
+if __name__ != "__main__":
+    start_scheduler()
 
 
 # ────────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    init_db()
-    # Start the worker only in the reloader's child process to avoid a duplicate
-    # poller; the atomic claim above makes a duplicate harmless regardless.
+    # Start the worker only in the reloader's child to avoid a duplicate poller.
     if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
         start_scheduler()
     if SSO_ENABLED:
