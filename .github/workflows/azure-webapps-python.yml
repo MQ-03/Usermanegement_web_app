@@ -7,14 +7,8 @@ on:
 
 # ── Set these for your environment ───────────────────────────────────────────
 env:
-<<<<<<< HEAD
   AZURE_WEBAPP_NAME: your-app-name          # App Service name (without .azurewebsites.net)
-  PYTHON_VERSION: '3.12'
-=======
-  AZURE_WEBAPP_NAME: UserMan          # App Service name (without .azurewebsites.net)
   PYTHON_VERSION: '3.13'
-  STARTUP_COMMAND: 'gunicorn --bind=0.0.0.0:8000 --workers 1 --timeout 120 app:app'
->>>>>>> 5854d3796e6771f203cfe300c159b97ff37089aa
 
 permissions:
   contents: read
