@@ -8,28 +8,85 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
   <style>
     body {
-      background: #1a1d23;
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
+      padding: 1rem;
+      background-color: #0b0d12;
+      overflow: hidden;
+      position: relative;
+    }
+    /* Aurora glow — three drifting radial blobs in the brand palette. */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: -25%;
+      z-index: -2;
+      background:
+        radial-gradient(38% 38% at 18% 22%, rgba(13,110,253,.55) 0%, transparent 60%),
+        radial-gradient(34% 34% at 82% 26%, rgba(111,66,193,.45) 0%, transparent 60%),
+        radial-gradient(42% 42% at 50% 88%, rgba(13,202,240,.30) 0%, transparent 60%);
+      filter: blur(40px);
+      animation: drift 18s ease-in-out infinite alternate;
+    }
+    /* Fine grid overlay for depth, fading toward the edges. */
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      background-image:
+        linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px);
+      background-size: 44px 44px;
+      -webkit-mask-image: radial-gradient(ellipse 70% 70% at 50% 50%, #000 40%, transparent 100%);
+              mask-image: radial-gradient(ellipse 70% 70% at 50% 50%, #000 40%, transparent 100%);
+    }
+    @keyframes drift {
+      0%   { transform: translate3d(0,0,0) scale(1); }
+      50%  { transform: translate3d(2%,-2%,0) scale(1.08); }
+      100% { transform: translate3d(-2%,2%,0) scale(1.04); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      body::before { animation: none; }
     }
     .login-card {
       width: 100%;
       max-width: 380px;
-      border: none;
-      border-radius: 14px;
-      box-shadow: 0 8px 40px rgba(0,0,0,.35);
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: 16px;
+      background: rgba(22,25,33,.72);
+      backdrop-filter: blur(16px) saturate(140%);
+      -webkit-backdrop-filter: blur(16px) saturate(140%);
+      box-shadow: 0 20px 60px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
+      color: #e9ecef;
     }
+    .login-card .form-control, .login-card .input-group-text {
+      background: rgba(255,255,255,.04);
+      border-color: rgba(255,255,255,.12);
+      color: #e9ecef;
+    }
+    .login-card .form-control:focus {
+      background: rgba(255,255,255,.06);
+      border-color: #0d6efd;
+      box-shadow: 0 0 0 .2rem rgba(13,110,253,.25);
+      color: #fff;
+    }
+    .login-card .form-control::placeholder { color: rgba(233,236,239,.4); }
+    .login-card .text-muted { color: rgba(233,236,239,.55) !important; }
+    .login-card hr { border-color: rgba(255,255,255,.15); }
     .brand {
       font-weight: 700;
       letter-spacing: .5px;
     }
     .brand-icon {
-      width: 54px; height: 54px; border-radius: 12px;
-      background: #0d6efd; color: #fff;
+      width: 54px; height: 54px; border-radius: 14px;
+      background: linear-gradient(135deg, #0d6efd, #6f42c1);
+      color: #fff;
       display: flex; align-items: center; justify-content: center;
       font-size: 1.6rem; margin: 0 auto 1rem;
+      box-shadow: 0 8px 24px rgba(13,110,253,.45);
     }
   </style>
 </head>
