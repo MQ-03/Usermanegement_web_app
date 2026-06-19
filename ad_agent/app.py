@@ -263,7 +263,7 @@ def ad_create_user() -> Any:
         groups = [g.strip() for g in groups.split(",") if g.strip()]
     groups_csv = ",".join(groups)
 
-    _, err, rc = _run(r"""
+    out, err, rc = _run(r"""
 $ErrorActionPreference = 'Stop'
 try {
     Import-Module ActiveDirectory
@@ -353,7 +353,10 @@ if ($env:ADSYNC_ENABLED -eq 'True') {
         "ADSYNC_SERVER":  ADSYNC_SERVER,
     })
     if rc != 0:
-        return jsonify({"error": err}), 400
+        # Fall back to stdout, then a generic note, so the failure is never a
+        # blank message that the client renders as a bare "400 Client Error".
+        detail = err or out or f"New-ADUser failed (exit {rc}) with no error output"
+        return jsonify({"error": detail}), 400
     return jsonify({"message": f"AD account created for {data['upn']}"}), 201
 
 

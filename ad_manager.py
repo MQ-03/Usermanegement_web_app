@@ -45,12 +45,16 @@ class ADManager:
             raise RuntimeError(f"Cannot reach AD agent at {self.base_url} — check it is running and port 5001 is open")
         except _req.exceptions.HTTPError as exc:
             # Surface the agent's actual error message, falling back to the HTTP status.
-            msg = str(exc)[:200]
             status = exc.response.status_code if exc.response is not None else None
-            try:
-                msg = exc.response.json().get("error") or msg
-            except Exception:
-                pass
+            msg = f"AD agent returned HTTP {status}" if status else str(exc)[:200]
+            if exc.response is not None:
+                try:
+                    msg = exc.response.json().get("error") or msg
+                except Exception:
+                    # Non-JSON body (e.g. an HTML error page) — surface its text.
+                    body = (exc.response.text or "").strip()
+                    if body:
+                        msg = f"{msg}: {body[:200]}"
             raise ADAgentError(msg, status)
         except _req.exceptions.RequestException as exc:
             raise RuntimeError(str(exc)[:200])
