@@ -1,0 +1,68 @@
+name: Build and deploy to Azure Web App
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+# ── Set these for your environment ───────────────────────────────────────────
+env:
+  AZURE_WEBAPP_NAME: your-app-name          # App Service name (without .azurewebsites.net)
+  PYTHON_VERSION: '3.12'
+  STARTUP_COMMAND: 'gunicorn --bind=0.0.0.0:8000 --workers 1 --timeout 120 app:app'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies (validate they resolve)
+        run: |
+          python -m venv .buildvenv
+          source .buildvenv/bin/activate
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Package source for deployment
+        # Ship source only — Azure (Oryx) installs requirements on deploy, so the
+        # build venv is excluded. Secrets/data are excluded as a safeguard.
+        run: |
+          zip -r release.zip . \
+            -x '.git/*' '.github/*' '.buildvenv/*' 'venv/*' 'umenv/*' \
+               '.claude/*' '**/__pycache__/*' '*.db' '.env' 'ad_agent/logs/*'
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-app
+          path: release.zip
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: production
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: python-app
+
+      - name: Unzip package
+        run: unzip -o release.zip
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE }}
+          startup-command: ${{ env.STARTUP_COMMAND }}
