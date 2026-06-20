@@ -165,23 +165,27 @@
 
         <!-- Active Users -->
         <div id="pane-active">
-          <table class="table table-hover mb-0">
-            <thead><tr>
-              <th>Name</th><th>UPN</th><th>Department</th><th>Job Title</th><th>Start Date</th><th>Status</th><th style="width:110px">Actions</th>
-            </tr></thead>
-            <tbody id="tbody-active"></tbody>
-          </table>
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead><tr>
+                <th>Name</th><th>UPN</th><th>Department</th><th>Job Title</th><th>Start Date</th><th>Status</th><th style="width:110px">Actions</th>
+              </tr></thead>
+              <tbody id="tbody-active"></tbody>
+            </table>
+          </div>
           <div class="empty-state d-none" id="empty-active"><i class="bi bi-inbox"></i>No active users found.</div>
         </div>
 
         <!-- Offboarded -->
         <div id="pane-offboarded" class="d-none">
-          <table class="table table-hover mb-0">
-            <thead><tr>
-              <th>Name</th><th>UPN</th><th>Department</th><th>End Date</th><th>Ticket</th><th>Reason</th><th style="width:80px">Actions</th>
-            </tr></thead>
-            <tbody id="tbody-offboarded"></tbody>
-          </table>
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead><tr>
+                <th>Name</th><th>UPN</th><th>Department</th><th>End Date</th><th>Ticket</th><th>Reason</th><th style="width:80px">Actions</th>
+              </tr></thead>
+              <tbody id="tbody-offboarded"></tbody>
+            </table>
+          </div>
           <div class="empty-state d-none" id="empty-offboarded"><i class="bi bi-inbox"></i>No offboarded users found.</div>
         </div>
 
@@ -199,10 +203,12 @@
             AD not connected. Run the app on a domain-joined machine with RSAT installed.<br>
             <small class="text-muted">Check AD status indicator in the navbar.</small>
           </div>
-          <table class="table table-hover mb-0" id="adUsersTable">
-            <thead><tr><th>Name</th><th>UPN</th><th>Department</th><th>Job Title</th><th>Status</th><th style="width:110px">Actions</th></tr></thead>
-            <tbody id="tbody-adusers"></tbody>
-          </table>
+          <div class="table-responsive">
+            <table class="table table-hover mb-0" id="adUsersTable">
+              <thead><tr><th>Name</th><th>UPN</th><th>Department</th><th>Job Title</th><th>Status</th><th style="width:110px">Actions</th></tr></thead>
+              <tbody id="tbody-adusers"></tbody>
+            </table>
+          </div>
           <div class="empty-state d-none" id="empty-adusers"><i class="bi bi-person"></i>No AD users found.</div>
         </div>
 
@@ -227,10 +233,12 @@
               AD not connected. Run the app on a domain-joined machine with RSAT installed.<br>
               <small class="text-muted">Check AD status indicator in the navbar.</small>
             </div>
-            <table class="table table-hover mb-0" id="adGroupsTable">
-              <thead><tr><th>Name</th><th>SAM</th><th>Type</th><th>Scope</th><th>Description</th><th style="width:80px">Actions</th></tr></thead>
-              <tbody id="tbody-adgroups"></tbody>
-            </table>
+            <div class="table-responsive">
+              <table class="table table-hover mb-0" id="adGroupsTable">
+                <thead><tr><th>Name</th><th>SAM</th><th>Type</th><th>Scope</th><th>Description</th><th style="width:80px">Actions</th></tr></thead>
+                <tbody id="tbody-adgroups"></tbody>
+              </table>
+            </div>
             <div class="empty-state d-none" id="empty-adgroups"><i class="bi bi-collection"></i>No AD groups found.</div>
           </div>
 
@@ -247,10 +255,12 @@
               <i class="bi bi-cloud-slash"></i>
               Graph not connected. Set GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET in .env
             </div>
-            <table class="table table-hover mb-0" id="m365GroupsTable">
-              <thead><tr><th>Name</th><th>Type</th><th>Mail Enabled</th><th>Description</th><th style="width:80px">Actions</th></tr></thead>
-              <tbody id="tbody-m365groups"></tbody>
-            </table>
+            <div class="table-responsive">
+              <table class="table table-hover mb-0" id="m365GroupsTable">
+                <thead><tr><th>Name</th><th>Type</th><th>Mail Enabled</th><th>Description</th><th style="width:80px">Actions</th></tr></thead>
+                <tbody id="tbody-m365groups"></tbody>
+              </table>
+            </div>
             <div class="empty-state d-none" id="empty-m365groups"><i class="bi bi-collection"></i>No M365 groups found.</div>
           </div>
         </div>
@@ -268,10 +278,12 @@
             </div>
             <div class="row g-3 mb-4" id="licenseCards"></div>
             <h6 class="fw-semibold text-muted mb-2">User License Assignments</h6>
-            <table class="table table-hover mb-0">
-              <thead><tr><th>User</th><th>UPN</th><th>License (local record)</th><th>Graph Licenses</th><th style="width:120px">Actions</th></tr></thead>
-              <tbody id="tbody-licenses"></tbody>
-            </table>
+            <div class="table-responsive">
+              <table class="table table-hover mb-0">
+                <thead><tr><th>User</th><th>UPN</th><th>License (local record)</th><th>Graph Licenses</th><th style="width:120px">Actions</th></tr></thead>
+                <tbody id="tbody-licenses"></tbody>
+              </table>
+            </div>
             <div class="empty-state d-none" id="empty-licenses"><i class="bi bi-key"></i>No users found.</div>
           </div>
         </div>
@@ -683,10 +695,12 @@
 
         <!-- Members table -->
         <div id="groupMembersLoading" class="text-muted small py-2">Loading members…</div>
-        <table class="table table-hover mb-0" id="groupMembersTable" style="display:none">
-          <thead><tr><th>Name</th><th>SAM / UPN</th><th>Type</th><th style="width:60px"></th></tr></thead>
-          <tbody id="tbody-group-members"></tbody>
-        </table>
+        <div class="table-responsive">
+          <table class="table table-hover mb-0" id="groupMembersTable" style="display:none">
+            <thead><tr><th>Name</th><th>SAM / UPN</th><th>Type</th><th style="width:60px"></th></tr></thead>
+            <tbody id="tbody-group-members"></tbody>
+          </table>
+        </div>
         <div class="empty-state d-none" id="empty-group-members"><i class="bi bi-person-slash"></i>No members.</div>
       </div>
       <div class="modal-footer">
