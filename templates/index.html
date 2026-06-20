@@ -26,6 +26,9 @@
 
     .table th { font-size: .78rem; text-transform: uppercase; letter-spacing: .6px; color: #888; font-weight: 600; border-top: none; }
     .table td { vertical-align: middle; font-size: .9rem; }
+    /* AD Users: top-align detail columns and keep the action buttons on one row. */
+    #adUsersTable td { vertical-align: top; }
+    #adUsersTable td.actions-cell { white-space: nowrap; }
     .table tbody tr:hover { background: #f8f9ff; }
 
     .badge-active   { background: #d1fae5; color: #065f46; }
@@ -205,7 +208,7 @@
           </div>
           <div class="table-responsive">
             <table class="table table-hover mb-0" id="adUsersTable">
-              <thead><tr><th>Name</th><th>UPN</th><th>Department</th><th>Job Title</th><th>Status</th><th style="width:110px">Actions</th></tr></thead>
+              <thead><tr><th>Name</th><th>UPN</th><th>Department</th><th>Job Title</th><th>Status</th><th style="width:150px">Actions</th></tr></thead>
               <tbody id="tbody-adusers"></tbody>
             </table>
           </div>
@@ -1603,14 +1606,16 @@ async function loadADUsers() {
       <td>${esc(u.Department) || "—"}</td>
       <td>${esc(u.Title) || "—"}</td>
       <td>${statusBadge}</td>
-      <td>
+      <td class="actions-cell">
         ${upn ? `
-          <button class="btn btn-sm btn-outline-secondary py-0 me-1" onclick="viewADUser('${esc(upn)}')" title="View"><i class="bi bi-eye"></i></button>
-          <button class="btn btn-sm btn-outline-primary py-0 me-1" onclick="openEditADUser('${esc(upn)}')" title="Edit"><i class="bi bi-pencil"></i></button>
+        <div class="d-flex gap-1">
+          <button class="btn btn-sm btn-outline-secondary py-0" onclick="viewADUser('${esc(upn)}')" title="View"><i class="bi bi-eye"></i></button>
+          <button class="btn btn-sm btn-outline-primary py-0" onclick="openEditADUser('${esc(upn)}')" title="Edit"><i class="bi bi-pencil"></i></button>
           ${u.Enabled
             ? `<button class="btn btn-sm btn-outline-danger py-0" onclick="openDisableAD('${esc(upn)}')" title="Disable"><i class="bi bi-person-dash"></i></button>`
             : `<button class="btn btn-sm btn-outline-success py-0" onclick="enableADUser('${esc(upn)}')" title="Enable"><i class="bi bi-person-check"></i></button>`}
-          ${IS_ADMIN ? `<button class="btn btn-sm btn-outline-danger py-0 ms-1" onclick="openDeleteAD('${esc(upn)}')" title="Delete from AD"><i class="bi bi-trash"></i></button>` : ""}`
+          ${IS_ADMIN ? `<button class="btn btn-sm btn-outline-danger py-0" onclick="openDeleteAD('${esc(upn)}')" title="Delete from AD"><i class="bi bi-trash"></i></button>` : ""}
+        </div>`
           : `<span class="text-muted small" title="No UPN — system account">—</span>`}
       </td>`;
     tbody.appendChild(tr);
