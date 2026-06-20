@@ -13,10 +13,19 @@
     .navbar { background: #1a1d23 !important; }
     .navbar-brand { font-weight: 700; letter-spacing: .5px; }
 
-    .stat-card { border: none; border-radius: 12px; }
+    .stat-card { border: none; border-radius: 12px; height: 100%; }
     .stat-card .icon-wrap {
-      width: 48px; height: 48px; border-radius: 10px;
+      width: 48px; height: 48px; border-radius: 10px; flex-shrink: 0;
       display: flex; align-items: center; justify-content: center; font-size: 1.4rem;
+    }
+    /* Phones: tighten spacing + sizing so the 2×2 grid stays balanced and
+       labels like "Total Users" / "New (30 days)" don't blow out the card height. */
+    @media (max-width: 575.98px) {
+      .stat-card { padding: .85rem !important; }
+      .stat-card .d-flex { gap: .65rem !important; }
+      .stat-card .icon-wrap { width: 40px; height: 40px; font-size: 1.15rem; border-radius: 9px; }
+      .stat-card .fs-4 { font-size: 1.3rem !important; line-height: 1.1; }
+      .stat-card .text-muted.small { font-size: .74rem; line-height: 1.15; }
     }
 
     .main-card { border: none; border-radius: 14px; box-shadow: 0 2px 16px rgba(0,0,0,.07); }
