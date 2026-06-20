@@ -737,6 +737,8 @@ def delete_user(uid: int) -> Any:
 
 @app.route("/api/audit")
 def audit_log() -> Any:
+    if not session.get("is_admin"):
+        return jsonify({"error": "Admin privileges required"}), 403
     db   = get_db()
     rows = db.execute(
         "SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT 200"
@@ -747,6 +749,8 @@ def audit_log() -> Any:
 @app.route("/api/audit/export")
 def export_audit() -> Any:
     """Download the full audit log as CSV."""
+    if not session.get("is_admin"):
+        return jsonify({"error": "Admin privileges required"}), 403
     rows = get_db().execute(
         "SELECT timestamp, actor, action, full_name, details, ticket"
         " FROM audit_log ORDER BY timestamp DESC"

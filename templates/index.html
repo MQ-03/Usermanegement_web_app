@@ -151,7 +151,9 @@
           <li class="nav-item"><button class="nav-link" data-tab="adusers"><i class="bi bi-server me-1"></i>AD Users</button></li>
           <li class="nav-item"><button class="nav-link" data-tab="groups"><i class="bi bi-collection me-1"></i>Groups</button></li>
           <li class="nav-item"><button class="nav-link" data-tab="licenses"><i class="bi bi-key me-1"></i>Licenses</button></li>
+          {% if is_admin %}
           <li class="nav-item"><button class="nav-link" data-tab="audit"><i class="bi bi-journal-text me-1"></i>Audit</button></li>
+          {% endif %}
         </ul>
         <div class="d-flex gap-2" id="toolbar-actions">
           <div class="search-wrap" id="toolbarSearch">
@@ -758,6 +760,7 @@
       </div>
       <div class="modal-body">
         <div id="settingsAlert" class="alert d-none"></div>
+        {% if is_admin %}
         <h6 class="fw-semibold mb-1">Organization Logo</h6>
         <p class="text-muted small">Shown in the navigation bar and on the sign-in page for all users.</p>
 
@@ -766,7 +769,6 @@
           <span id="settingsLogoNone" class="text-muted small">No logo set — using the default icon.</span>
         </div>
 
-        {% if is_admin %}
         <label class="form-label small fw-semibold">Upload a new logo</label>
         <input type="file" id="logoFile" class="form-control" accept=".png,.jpg,.jpeg,.gif,.webp" />
         <div class="form-text">PNG, JPG, GIF or WEBP. Max 2 MB. Wide/transparent works best.</div>
@@ -776,11 +778,9 @@
           </button>
           <button class="btn btn-outline-danger btn-sm" id="btnRemoveLogo"><i class="bi bi-trash me-1"></i>Remove</button>
         </div>
-        {% else %}
-        <p class="text-muted small fst-italic mb-0">Only administrators can change the organization logo.</p>
-        {% endif %}
 
         <hr class="my-4" />
+        {% endif %}
         <h6 class="fw-semibold mb-1">Theme</h6>
         <p class="text-muted small">Applies to this browser only.</p>
         <div class="btn-group w-100" role="group" id="themeButtons">
@@ -2179,19 +2179,22 @@ $("btnSettings").addEventListener("click", async () => {
   const radio = $("theme-" + pref);
   if (radio) radio.checked = true;
   if ($("logoFile")) $("logoFile").value = "";   // admin-only field
+  // The logo section only renders for admins; skip its preview otherwise.
   const preview = $("settingsLogoPreview");
   const none    = $("settingsLogoNone");
-  preview.style.display = "none";
-  none.style.display = "";
-  try {
-    const r = await fetch("/api/settings");
-    const d = await r.json();
-    if (d.logo_url) {
-      preview.src = d.logo_url;
-      preview.style.display = "";
-      none.style.display = "none";
-    }
-  } catch { /* ignore */ }
+  if (preview && none) {
+    preview.style.display = "none";
+    none.style.display = "";
+    try {
+      const r = await fetch("/api/settings");
+      const d = await r.json();
+      if (d.logo_url) {
+        preview.src = d.logo_url;
+        preview.style.display = "";
+        none.style.display = "none";
+      }
+    } catch { /* ignore */ }
+  }
   if (IS_ADMIN) loadUpnSuffixes();
   settingsModal.show();
 });
