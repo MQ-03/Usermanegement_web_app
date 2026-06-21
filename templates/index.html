@@ -49,6 +49,10 @@
     .search-wrap { position: relative; }
     .search-wrap .bi-search { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #aaa; }
     .search-wrap input { padding-left: 32px; }
+    /* Toolbar search shrinks to fit next to the Onboard button instead of a
+       fixed width that overflows on small screens. */
+    #toolbarSearch { flex: 1 1 auto; min-width: 0; max-width: 240px; }
+    #toolbarSearch input { width: 100%; }
 
     .act-onboarded  { background:#dbeafe; color:#1e40af; }
     .act-offboarded { background:#fee2e2; color:#991b1b; }
@@ -164,12 +168,12 @@
           <li class="nav-item"><button class="nav-link" data-tab="audit"><i class="bi bi-journal-text me-1"></i>Audit</button></li>
           {% endif %}
         </ul>
-        <div class="d-flex gap-2" id="toolbar-actions">
+        <div class="d-flex gap-2 align-items-center" id="toolbar-actions">
           <div class="search-wrap" id="toolbarSearch">
             <i class="bi bi-search"></i>
-            <input type="text" id="searchInput" class="form-control form-control-sm" placeholder="Search users…" style="width:220px" />
+            <input type="text" id="searchInput" class="form-control form-control-sm" placeholder="Search users…" />
           </div>
-          <button class="btn btn-primary btn-sm" id="btnOnboard">
+          <button class="btn btn-primary btn-sm text-nowrap" id="btnOnboard">
             <i class="bi bi-person-plus-fill me-1"></i>Onboard User
           </button>
         </div>
