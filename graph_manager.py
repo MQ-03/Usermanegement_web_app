@@ -186,6 +186,19 @@ class GraphManager:
 
         return None
 
+    def get_sync_status(self, upn: str) -> dict[str, Any]:
+        """Whether `upn` exists in Entra ID and, if so, whether it is synced
+        from on-prem AD (onPremisesSyncEnabled) vs. a cloud-only account."""
+        try:
+            d = self._get(f"users/{upn}?$select=id,onPremisesSyncEnabled,accountEnabled")
+            return {
+                "found":   True,
+                "synced":  bool(d.get("onPremisesSyncEnabled")),
+                "enabled": d.get("accountEnabled", True),
+            }
+        except Exception:
+            return {"found": False, "synced": False, "enabled": False}
+
     def add_to_group(self, group_id: str, user_id: str) -> None:
         self._post(f"groups/{group_id}/members/$ref", {
             "@odata.id": f"{_BASE}/directoryObjects/{user_id}"

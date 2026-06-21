@@ -1050,6 +1050,17 @@ def graph_user_licenses(upn: str) -> Any:
         return jsonify({"error": str(exc)}), 500
 
 
+@app.route("/api/graph/users/<string:upn>/sync")
+def graph_user_sync(upn: str) -> Any:
+    """Entra ID presence / on-prem sync status for an active user."""
+    if _graph is None:
+        return jsonify({"error": "Graph manager unavailable"}), 503
+    try:
+        return jsonify(_graph.get_sync_status(upn))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 @app.route("/api/graph/users/<string:upn>/licenses", methods=["POST"])
 def graph_assign_license(upn: str) -> Any:
     if _graph is None:

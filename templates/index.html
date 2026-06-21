@@ -182,7 +182,7 @@
           <div class="table-responsive">
             <table class="table table-hover mb-0">
               <thead><tr>
-                <th>Name</th><th>UPN</th><th>Department</th><th>Job Title</th><th>Start Date</th><th>Status</th><th style="width:110px">Actions</th>
+                <th>Name</th><th>UPN</th><th>Department</th><th>Job Title</th><th>Start Date</th><th>Status</th><th>Entra ID</th><th style="width:110px">Actions</th>
               </tr></thead>
               <tbody id="tbody-active"></tbody>
             </table>
@@ -1207,6 +1207,7 @@ async function loadUsers(status) {
         <td>${esc(u.job_title) || "—"}</td>
         <td>${esc(u.start_date) || "—"}</td>
         <td><span class="badge badge-active rounded-pill px-2">Active</span></td>
+        <td id="entra-${u.id}"><span class="text-muted small">…</span></td>
         <td>
           <button class="btn btn-sm btn-outline-secondary py-0 me-1" onclick="viewUser(${u.id})" title="View"><i class="bi bi-eye"></i></button>
           <button class="btn btn-sm btn-outline-danger py-0" onclick="openOffboard(${u.id},'${esc(u.full_name)}','${esc(u.upn)}')" title="Offboard"><i class="bi bi-person-dash"></i></button>
@@ -1225,7 +1226,28 @@ async function loadUsers(status) {
         </td>`;
     }
     tbody.appendChild(tr);
+    if (status === "active") loadEntraBadge(u.upn, `entra-${u.id}`);
   });
+}
+
+// Per-row Entra ID sync indicator (loaded async, like the license badges).
+async function loadEntraBadge(upn, cellId) {
+  const cell = $(cellId);
+  if (!cell) return;
+  try {
+    const r = await fetch(`/api/graph/users/${encodeURIComponent(upn)}/sync`);
+    if (!r.ok) { cell.innerHTML = `<span class="text-muted small" title="Entra ID not connected">—</span>`; return; }
+    const s = await r.json();
+    if (!s.found) {
+      cell.innerHTML = `<span class="badge bg-secondary-subtle text-secondary rounded-pill px-2" title="Not present in Entra ID — may not have synced yet"><i class="bi bi-cloud-slash me-1"></i>Not synced</span>`;
+    } else if (s.synced) {
+      cell.innerHTML = `<span class="badge badge-active rounded-pill px-2" title="Synced from on-prem AD to Entra ID"><i class="bi bi-check-circle me-1"></i>Synced</span>`;
+    } else {
+      cell.innerHTML = `<span class="badge badge-ad rounded-pill px-2" title="Cloud-only Entra ID account (not synced from on-prem)"><i class="bi bi-cloud-check me-1"></i>Entra</span>`;
+    }
+  } catch {
+    cell.innerHTML = `<span class="text-muted small">—</span>`;
+  }
 }
 
 // ─── Audit ───────────────────────────────────────────────────────────────────
