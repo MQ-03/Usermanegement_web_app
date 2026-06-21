@@ -1443,8 +1443,14 @@ $("btnSubmitOnboard").addEventListener("click", async () => {
       }),
     });
     const adData = await adR.json();
-    const grpText = selectedGroups.length ? ` Added to ${selectedGroups.length} group(s).` : "";
-    msgs.push(adR.ok ? `AD account created.${grpText}` : `AD: ${adData.error}`);
+    // Only report AD on success — don't pollute the onboarding toast with the
+    // raw AD agent error (e.g. "AD agent returned HTTP 400"); log it for debugging.
+    if (adR.ok) {
+      const grpText = selectedGroups.length ? ` Added to ${selectedGroups.length} group(s).` : "";
+      msgs.push(`AD account created.${grpText}`);
+    } else {
+      console.warn("AD account creation failed:", adData.error);
+    }
 
     // Step 3: Schedule the M365 license for ~45 min later (after directory sync).
     // Only when a Graph-backed SKU was picked and Graph is connected.
