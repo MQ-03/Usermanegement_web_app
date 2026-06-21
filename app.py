@@ -480,6 +480,11 @@ def logo_url() -> str:
     fname = get_setting("logo_file", "")
     if not fname:
         return ""
+    # The filename is stored in the (persistent) DB, but the file itself lives on
+    # disk. After a deploy/restart the file can be gone (e.g. DATA_DIR not on
+    # persistent storage) — fall back to the default icon instead of a broken image.
+    if not (BRANDING_DIR / fname).is_file():
+        return ""
     ver = get_setting("logo_updated", "")
     url = url_for("branding_file", filename=fname)
     return f"{url}?v={ver}" if ver else url
