@@ -870,10 +870,51 @@ function showToast(msg, ok = true) {
   toastEl.show();
 }
 
+// Condense a long/raw error (e.g. a PowerShell stack) into a one-line summary.
+function summarizeError(msg) {
+  let s = String(msg || "").trim();
+  if (!s) return "Operation failed.";
+  // PowerShell appends "At line:X char:Y + ..." and "CategoryInfo ..." — drop them.
+  s = s.split(/\s+At line:\d+/)[0].split(/\s+\+ CategoryInfo/)[0];
+  // Strip a leading "Cmdlet-Name : " prefix for readability.
+  s = s.replace(/^[\w-]+\s*:\s*/, "");
+  // Keep just the first sentence when it's self-contained.
+  const first = s.split(/\.\s/)[0];
+  if (first && first.length <= 180) s = first;
+  s = s.replace(/\s+/g, " ").trim();
+  if (s.length > 180) s = s.slice(0, 180) + "…";
+  return s || "Operation failed.";
+}
+
 function showAlert(id, msg, type = "danger") {
   const el = $(id);
   el.className = `alert alert-${type}`;
-  el.textContent = msg;
+  const full = String(msg || "");
+  const summary = summarizeError(full);
+  // If the raw message has more than the summary, show a "More details" toggle.
+  if (full.trim().length > summary.length) {
+    el.innerHTML = "";
+    const span = document.createElement("span");
+    span.textContent = summary + " ";
+    const toggle = document.createElement("a");
+    toggle.href = "#";
+    toggle.className = "alert-link small";
+    toggle.textContent = "More details";
+    const pre = document.createElement("pre");
+    pre.className = "small mt-2 mb-0 d-none";
+    pre.style.whiteSpace = "pre-wrap";
+    pre.style.maxHeight = "220px";
+    pre.style.overflow = "auto";
+    pre.textContent = full;
+    toggle.onclick = (e) => {
+      e.preventDefault();
+      const hidden = pre.classList.toggle("d-none");
+      toggle.textContent = hidden ? "More details" : "Hide details";
+    };
+    el.append(span, toggle, pre);
+  } else {
+    el.textContent = summary;
+  }
   el.classList.remove("d-none");
 }
 
@@ -1921,7 +1962,7 @@ function openGroupMembers(id, name, type) {
   $("groupModalType").value = type;
   $("groupModalName").textContent = name;
   $("addMemberInput").value = "";
-  $("addMemberInput").placeholder = type === "ad" ? "SAM account name" : "User UPN";
+  $("addMemberInput").placeholder = type === "ad" ? "SAM account name" : "User UPN or SAM";
   hideAlert("groupAlert");
   $("groupMembersLoading").style.display = "";
   $("groupMembersTable").style.display = "none";

@@ -141,10 +141,27 @@ class GraphManager:
         return group_id in (data.get("value", []) or [])
 
     def get_user_id(self, upn: str) -> str | None:
+        # 1) Direct lookup — works for a full UPN or an object id.
         try:
-            return self._get(f"users/{upn}?$select=id").get("id")
+            uid = self._get(f"users/{upn}?$select=id").get("id")
+            if uid:
+                return uid
         except Exception:
-            return None
+            pass
+        # 2) Fall back to the on-prem SAM (or mail nickname) so short ids like
+        #    "ehan.zain" resolve to the synced Entra user.
+        safe = upn.replace("'", "''")
+        try:
+            data = self._get(
+                "users?$select=id"
+                f"&$filter=onPremisesSamAccountName eq '{safe}' or mailNickname eq '{safe}'"
+            )
+            vals = data.get("value", [])
+            if vals:
+                return vals[0].get("id")
+        except Exception:
+            pass
+        return None
 
     def add_to_group(self, group_id: str, user_id: str) -> None:
         self._post(f"groups/{group_id}/members/$ref", {
