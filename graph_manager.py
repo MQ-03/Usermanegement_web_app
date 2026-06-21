@@ -57,8 +57,11 @@ class GraphManager:
                    f"on-prem yet, or the UPN domain is not verified in this tenant. ({msg})")
         raise RuntimeError(msg)
 
-    def _get(self, path: str) -> Any:
-        r = requests.get(f"{_BASE}/{path}", headers=self._hdrs(), timeout=30)
+    def _get(self, path: str, extra_headers: dict[str, str] | None = None) -> Any:
+        headers = self._hdrs()
+        if extra_headers:
+            headers.update(extra_headers)
+        r = requests.get(f"{_BASE}/{path}", headers=headers, timeout=30)
         self._check(r)
         return r.json()
 
@@ -141,6 +144,8 @@ class GraphManager:
         return group_id in (data.get("value", []) or [])
 
     def get_user_id(self, upn: str) -> str | None:
+        """Resolve a user object id from a full UPN, an object id, or a short
+        SAM-style id (the part before '@') for both cloud-only and synced users."""
         # 1) Direct lookup — works for a full UPN or an object id.
         try:
             uid = self._get(f"users/{upn}?$select=id").get("id")
@@ -148,19 +153,37 @@ class GraphManager:
                 return uid
         except Exception:
             pass
-        # 2) Fall back to the on-prem SAM (or mail nickname) so short ids like
-        #    "ehan.zain" resolve to the synced Entra user.
+
         safe = upn.replace("'", "''")
+
+        # 2) Standard-query filters: match the UPN prefix (cloud users whose UPN
+        #    local part is the typed id) or the mail nickname. These don't need
+        #    advanced query capabilities, so they won't 400.
         try:
             data = self._get(
-                "users?$select=id"
-                f"&$filter=onPremisesSamAccountName eq '{safe}' or mailNickname eq '{safe}'"
+                "users?$select=id,userPrincipalName"
+                f"&$filter=startsWith(userPrincipalName,'{safe}@') or mailNickname eq '{safe}'"
             )
             vals = data.get("value", [])
             if vals:
                 return vals[0].get("id")
         except Exception:
             pass
+
+        # 3) Advanced query for the on-prem SAM (synced users). Filtering on
+        #    onPremisesSamAccountName requires ConsistencyLevel=eventual + $count.
+        try:
+            data = self._get(
+                "users?$count=true&$select=id"
+                f"&$filter=onPremisesSamAccountName eq '{safe}'",
+                extra_headers={"ConsistencyLevel": "eventual"},
+            )
+            vals = data.get("value", [])
+            if vals:
+                return vals[0].get("id")
+        except Exception:
+            pass
+
         return None
 
     def add_to_group(self, group_id: str, user_id: str) -> None:
