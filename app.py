@@ -54,9 +54,14 @@ BRANDING_DIR     = DATA_DIR / "branding"
 # SVG is intentionally excluded (script-in-SVG XSS risk when served same-origin).
 ALLOWED_LOGO_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
-# Delay before a freshly-created user's M365 license is assigned, giving
-# on-prem AD → Azure AD (Entra) directory sync time to propagate the account.
-SYNC_DELAY_MINUTES = 45
+# When a freshly-created user's M365 license is assigned. Rather than waiting a
+# fixed, conservative window, the worker makes a first attempt after a short
+# delay and then retries on a readiness check (does the account exist in Entra
+# yet?) until it appears — so the license lands as soon as AD delta sync
+# propagates the account, instead of failing once and giving up.
+SYNC_DELAY_MINUTES       = int(os.getenv("SYNC_DELAY_MINUTES", "10"))   # first attempt
+LICENSE_RETRY_MINUTES    = int(os.getenv("LICENSE_RETRY_MINUTES", "5")) # gap between retries
+LICENSE_MAX_WAIT_MINUTES = int(os.getenv("LICENSE_MAX_WAIT_MINUTES", "180"))  # give up after
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024  # 2 MB upload cap
@@ -1173,21 +1178,8 @@ def graph_remove_from_group(group_id: str, user_id: str) -> Any:
 
 # ── Scheduled-task worker ─────────────────────────────────────────────────────
 
-def _run_scheduled_task(conn: PGConnection, task: Any) -> None:
-    ts = now_utc()
-    try:
-        if task["task_type"] == "assign_license":
-            if _graph is None:
-                raise RuntimeError("Graph manager unavailable")
-            loc = usage_location_for(task["upn"], conn)
-            if loc:
-                _graph.set_usage_location(task["upn"], loc)
-            _graph.assign_license(task["upn"], task["payload"])
-            status, result = "done", f"License {task['payload']} assigned to {task['upn']}"
-        else:
-            status, result = "failed", f"Unknown task type: {task['task_type']}"
-    except Exception as exc:
-        status, result = "failed", str(exc)[:250]
+def _finish_task(conn: PGConnection, task: Any, status: str, result: str, ts: str) -> None:
+    """Mark a task done/failed and record it in the audit log."""
     conn.execute(
         "UPDATE scheduled_tasks SET status=?, result=?, completed_at=? WHERE id=?",
         (status, result, ts, task["id"]),
@@ -1197,6 +1189,58 @@ def _run_scheduled_task(conn: PGConnection, task: Any) -> None:
         (None, task["upn"], f"license_{status}", result, "system (scheduled)", ts),
     )
     conn.commit()
+
+
+def _minutes_since(stamp: str, now: str) -> float:
+    """Minutes between two 'YYYY-MM-DD HH:MM:SS' timestamps (0 if unparseable)."""
+    try:
+        fmt = "%Y-%m-%d %H:%M:%S"
+        return (datetime.strptime(now, fmt) - datetime.strptime(stamp, fmt)).total_seconds() / 60
+    except Exception:
+        return 0.0
+
+
+def _run_scheduled_task(conn: PGConnection, task: Any) -> None:
+    ts = now_utc()
+    if task["task_type"] != "assign_license":
+        _finish_task(conn, task, "failed", f"Unknown task type: {task['task_type']}", ts)
+        return
+    if _graph is None:
+        _finish_task(conn, task, "failed", "Graph manager unavailable", ts)
+        return
+
+    upn = task["upn"]
+    # Readiness check — only assign once the account actually exists in Entra ID.
+    try:
+        user_id = _graph.get_user_id(upn)
+    except Exception:
+        user_id = None
+
+    if not user_id:
+        # Not synced yet. Re-queue for a short retry until it appears, up to a
+        # cap — so the license lands automatically once delta sync propagates.
+        waited = _minutes_since(task["created_at"] or ts, ts)
+        if waited < LICENSE_MAX_WAIT_MINUTES:
+            next_run = (datetime.utcnow() + timedelta(minutes=LICENSE_RETRY_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
+            conn.execute(
+                "UPDATE scheduled_tasks SET status='pending', run_at=?, result=? WHERE id=?",
+                (next_run, f"Waiting for {upn} in Entra ID — retry at {next_run} UTC", task["id"]),
+            )
+            conn.commit()
+        else:
+            _finish_task(conn, task, "failed",
+                         f"{upn} did not appear in Entra ID within {LICENSE_MAX_WAIT_MINUTES} min", ts)
+        return
+
+    # Account exists — assign the license.
+    try:
+        loc = usage_location_for(upn, conn)
+        if loc:
+            _graph.set_usage_location(upn, loc)
+        _graph.assign_license(upn, task["payload"])
+        _finish_task(conn, task, "done", f"License {task['payload']} assigned to {upn}", ts)
+    except Exception as exc:
+        _finish_task(conn, task, "failed", str(exc)[:250], ts)
 
 
 def _scheduler_loop() -> None:
