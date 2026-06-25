@@ -437,9 +437,10 @@ _AD_TO_LOCAL = {
 }
 
 
-def sync_local_from_ad(upn: str, data: dict) -> None:
-    """Update the local users record (matched by current UPN) to reflect an AD edit."""
-    db  = get_db()
+def sync_local_from_ad(upn: str, data: dict, db: Any = None) -> None:
+    """Update the local users record (matched by current UPN) to reflect an AD edit.
+    Pass `db` to run outside a request (e.g. the scheduler thread)."""
+    db  = db or get_db()
     row = db.execute("SELECT id FROM users WHERE LOWER(upn)=LOWER(?)", (upn,)).fetchone()
     if not row:
         return
@@ -1111,6 +1112,53 @@ def schedule_license() -> Any:
     return jsonify({"message": f"License assignment scheduled for {run_at} UTC", "run_at": run_at})
 
 
+# ── Generic scheduling ──────────────────────────────────────────────────────────
+
+_SCHED_TYPES = {"create_user", "edit_ad_user", "offboard_user", "enable_ad_user"}
+
+
+def _parse_iso_utc(s: str) -> str:
+    """Parse a client UTC ISO string (e.g. '2026-06-25T14:30:00.000Z') into the
+    'YYYY-MM-DD HH:MM:SS' form the scheduler compares against. '' if invalid."""
+    s = (s or "").strip().replace("Z", "").split(".")[0]
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M"):
+        try:
+            return datetime.strptime(s, fmt).strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            continue
+    return ""
+
+
+@app.route("/api/schedule", methods=["POST"])
+def schedule_action() -> Any:
+    """Queue a create/edit/offboard/enable action to run at a future UTC time.
+    Body: {task_type, upn, run_at (UTC ISO), payload:{...}}."""
+    data      = request.get_json(force=True) or {}
+    task_type = (data.get("task_type") or "").strip()
+    if task_type not in _SCHED_TYPES:
+        return jsonify({"error": "Invalid task_type"}), 400
+    run_at = _parse_iso_utc(data.get("run_at", ""))
+    if not run_at:
+        return jsonify({"error": "A valid run_at (UTC ISO) is required"}), 400
+    upn     = (data.get("upn") or "").strip().lower()
+    payload = data.get("payload") or {}
+    ts      = now_utc()
+    db = get_db()
+    db.execute(
+        "INSERT INTO scheduled_tasks (task_type, upn, payload, run_at, status, created_at)"
+        " VALUES (?, ?, ?, ?, 'pending', ?)",
+        (task_type, upn, json.dumps(payload), run_at, ts),
+    )
+    db.execute(
+        "INSERT INTO audit_log (user_id, full_name, action, details, ticket, actor, timestamp) VALUES (?,?,?,?,?,?,?)",
+        (None, upn or "—", f"scheduled_{task_type}",
+         f"{task_type.replace('_', ' ')} queued for {run_at} UTC", payload.get("ticket", ""),
+         current_actor(), ts),
+    )
+    db.commit()
+    return jsonify({"message": f"Action scheduled for {run_at} UTC", "run_at": run_at}), 201
+
+
 @app.route("/api/graph/users/<string:upn>/licenses/<string:sku_id>", methods=["DELETE"])
 def graph_remove_license(upn: str, sku_id: str) -> Any:
     if _graph is None:
@@ -1186,9 +1234,117 @@ def _finish_task(conn: PGConnection, task: Any, status: str, result: str, ts: st
     )
     conn.execute(
         "INSERT INTO audit_log (user_id, full_name, action, details, actor, timestamp) VALUES (?,?,?,?,?,?)",
-        (None, task["upn"], f"license_{status}", result, "system (scheduled)", ts),
+        (None, task["upn"], f"scheduled_{task['task_type']}_{status}", result, "system (scheduled)", ts),
     )
     conn.commit()
+
+
+# ── Scheduled operation handlers (run in the worker thread, no request context) ──
+
+def _sched_create_user(conn: PGConnection, p: dict) -> str:
+    """Create the local record + AD account, then queue the license assignment."""
+    full_name = (p.get("full_name") or "").strip()
+    upn       = (p.get("upn") or "").strip().lower()
+    if not full_name or not upn:
+        raise RuntimeError("full_name and upn are required")
+    ts = now_utc()
+    cur = conn.execute(
+        """
+        INSERT INTO users
+          (full_name, upn, department, job_title, manager, location,
+           license, start_date, notes, phone, mobile, country,
+           description, contract_end_date, status, created_at, updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)
+        RETURNING id
+        """,
+        (full_name, upn, p.get("department", ""), p.get("job_title", ""),
+         p.get("manager", ""), p.get("location", ""), p.get("license", ""),
+         p.get("start_date", ""), p.get("notes", ""), p.get("phone", ""),
+         p.get("mobile", ""), p.get("country", ""), p.get("description", ""),
+         p.get("contract_end_date", ""), ts, ts),
+    )
+    uid = cur.fetchone()["id"]
+    conn.execute(
+        "INSERT INTO audit_log (user_id, full_name, action, details, actor, timestamp) VALUES (?,?,?,?,?,?)",
+        (uid, full_name, "onboarded", f"Onboarded (scheduled): {upn}", "system (scheduled)", ts),
+    )
+    conn.commit()
+
+    note = "local record created"
+    if _ad is not None:
+        _ad.create_user(
+            full_name=full_name, upn=upn, sam=(p.get("sam") or "").strip(),
+            display_name=(p.get("display_name") or full_name).strip(),
+            given_name=(p.get("given_name") or "").strip(),
+            surname=(p.get("surname") or "").strip(),
+            password=p.get("password", ""),
+            department=p.get("department", ""), title=p.get("job_title", ""),
+            manager=p.get("manager", ""), ou=p.get("ou", ""),
+            must_change_password=bool(p.get("must_change_password", True)),
+            phone=p.get("phone", ""), mobile=p.get("mobile", ""),
+            country=p.get("country", ""), description=p.get("description", ""),
+            contract_end_date=p.get("contract_end_date", ""),
+            email=p.get("upn", ""), ad_groups=p.get("ad_groups", []),
+        )
+        note += "; AD account created"
+
+    sku = (p.get("sku_id") or "").strip()
+    if sku and _graph is not None:
+        conn.execute(
+            "INSERT INTO scheduled_tasks (task_type, upn, payload, run_at, status, created_at)"
+            " VALUES ('assign_license', ?, ?, ?, 'pending', ?)",
+            (upn, sku, now_utc(), now_utc()),
+        )
+        conn.commit()
+        note += "; license queued"
+    return f"{full_name}: {note}"
+
+
+def _sched_edit_ad_user(conn: PGConnection, upn: str, fields: dict) -> str:
+    if _ad is None:
+        raise RuntimeError("AD manager unavailable")
+    _ad.update_user(upn, fields)
+    sync_local_from_ad(upn, fields, conn)
+    return f"AD account updated for {upn}"
+
+
+def _sched_offboard_user(conn: PGConnection, p: dict) -> str:
+    uid  = p.get("uid")
+    user = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    if not user:
+        raise RuntimeError("User not found")
+    ts = now_utc()
+    conn.execute(
+        "UPDATE users SET status='offboarded', end_date=?, ticket=?, reason=?, notes=?, updated_at=? WHERE id=?",
+        (p.get("end_date", ""), p.get("ticket", ""), p.get("reason", ""),
+         p.get("notes", user["notes"] or ""), ts, uid),
+    )
+    conn.commit()
+    note = "marked offboarded"
+    if p.get("disable_ad") and _ad is not None:
+        result  = _ad.disable_user(user["upn"])
+        removed = result.get("removed_groups", []) if isinstance(result, dict) else []
+        if removed:
+            conn.execute(
+                "INSERT INTO ad_disabled_groups (upn, groups_json, updated_at) VALUES (?,?,?)"
+                " ON CONFLICT (upn) DO UPDATE SET groups_json=EXCLUDED.groups_json, updated_at=EXCLUDED.updated_at",
+                (user["upn"], json.dumps(removed), now_utc()),
+            )
+            conn.commit()
+        note += f"; AD disabled (removed {len(removed)} group(s))"
+    return f"{user['full_name']}: {note}"
+
+
+def _sched_enable_ad_user(conn: PGConnection, upn: str) -> str:
+    if _ad is None:
+        raise RuntimeError("AD manager unavailable")
+    row     = conn.execute("SELECT groups_json FROM ad_disabled_groups WHERE upn=?", (upn,)).fetchone()
+    restore = json.loads(row["groups_json"]) if row else []
+    _ad.enable_user(upn, restore_groups=restore)
+    if row:
+        conn.execute("DELETE FROM ad_disabled_groups WHERE upn=?", (upn,))
+        conn.commit()
+    return f"AD account enabled for {upn} (restored {len(restore)} group(s))"
 
 
 def _minutes_since(stamp: str, now: str) -> float:
@@ -1202,8 +1358,34 @@ def _minutes_since(stamp: str, now: str) -> float:
 
 def _run_scheduled_task(conn: PGConnection, task: Any) -> None:
     ts = now_utc()
-    if task["task_type"] != "assign_license":
-        _finish_task(conn, task, "failed", f"Unknown task type: {task['task_type']}", ts)
+    tt = task["task_type"]
+
+    # Non-license actions: run once at their scheduled time.
+    if tt in ("create_user", "edit_ad_user", "offboard_user", "enable_ad_user"):
+        try:
+            payload = json.loads(task["payload"] or "{}")
+        except Exception:
+            payload = {}
+        try:
+            if tt == "create_user":
+                result = _sched_create_user(conn, payload)
+            elif tt == "edit_ad_user":
+                result = _sched_edit_ad_user(conn, task["upn"], payload)
+            elif tt == "offboard_user":
+                result = _sched_offboard_user(conn, payload)
+            else:
+                result = _sched_enable_ad_user(conn, task["upn"])
+            _finish_task(conn, task, "done", result, ts)
+        except Exception as exc:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            _finish_task(conn, task, "failed", str(exc)[:250], ts)
+        return
+
+    if tt != "assign_license":
+        _finish_task(conn, task, "failed", f"Unknown task type: {tt}", ts)
         return
     if _graph is None:
         _finish_task(conn, task, "failed", "Graph manager unavailable", ts)

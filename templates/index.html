@@ -486,12 +486,19 @@
         </div>
 
       </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button class="btn btn-primary" id="btnSubmitOnboard">
-          <span class="spinner-border spinner-border-sm d-none me-1" id="obSpinner"></span>
-          Onboard User
-        </button>
+      <div class="modal-footer d-flex justify-content-between align-items-end flex-wrap gap-2">
+        <div>
+          <label class="form-label small mb-1"><i class="bi bi-clock-history me-1"></i>Schedule for later (optional)</label>
+          <input type="datetime-local" id="ob-schedule" class="form-control form-control-sm" style="max-width:230px" />
+          <div class="form-text small">Leave empty to onboard now.</div>
+        </div>
+        <div>
+          <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button class="btn btn-primary" id="btnSubmitOnboard">
+            <span class="spinner-border spinner-border-sm d-none me-1" id="obSpinner"></span>
+            Onboard User
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -558,12 +565,19 @@
           </div>
         </div>
       </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button class="btn btn-danger" id="btnSubmitOffboard">
-          <span class="spinner-border spinner-border-sm d-none me-1" id="offSpinner"></span>
-          Confirm Offboard
-        </button>
+      <div class="modal-footer d-flex justify-content-between align-items-end flex-wrap gap-2">
+        <div>
+          <label class="form-label small mb-1"><i class="bi bi-clock-history me-1"></i>Schedule for later (optional)</label>
+          <input type="datetime-local" id="off-schedule" class="form-control form-control-sm" style="max-width:230px" />
+          <div class="form-text small">Leave empty to offboard now.</div>
+        </div>
+        <div>
+          <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button class="btn btn-danger" id="btnSubmitOffboard">
+            <span class="spinner-border spinner-border-sm d-none me-1" id="offSpinner"></span>
+            Confirm Offboard
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -686,11 +700,43 @@
           <div class="col-12"><label class="form-label fw-semibold">Description</label><input id="adEdit-description" class="form-control" /></div>
         </div>
       </div>
+      <div class="modal-footer d-flex justify-content-between align-items-end flex-wrap gap-2">
+        <div>
+          <label class="form-label small mb-1"><i class="bi bi-clock-history me-1"></i>Schedule for later (optional)</label>
+          <input type="datetime-local" id="adEdit-schedule" class="form-control form-control-sm" style="max-width:230px" />
+          <div class="form-text small">Leave empty to apply now.</div>
+        </div>
+        <div>
+          <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button class="btn btn-primary" id="btnSaveADEdit">
+            <span class="spinner-border spinner-border-sm d-none me-1" id="adEditSpinner"></span>Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===================== RE-ENABLE MODAL ===================== -->
+<div class="modal fade" id="enableModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-person-check me-2 text-success"></i>Re-enable AD Account</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="enableAlert" class="alert d-none"></div>
+        <p class="mb-3">Re-enable <strong id="enable-upn-display"></strong> and restore any previously-removed group memberships.</p>
+        <input type="hidden" id="enable-upn" />
+        <label class="form-label small mb-1"><i class="bi bi-clock-history me-1"></i>Schedule for later (optional)</label>
+        <input type="datetime-local" id="enable-schedule" class="form-control form-control-sm" style="max-width:230px" />
+        <div class="form-text small">Leave empty to re-enable now.</div>
+      </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button class="btn btn-primary" id="btnSaveADEdit">
-          <span class="spinner-border spinner-border-sm d-none me-1" id="adEditSpinner"></span>Save Changes
-        </button>
+        <button class="btn btn-success" id="btnConfirmEnable">Re-enable</button>
       </div>
     </div>
   </div>
@@ -872,6 +918,7 @@ const assignLicModal  = new bootstrap.Modal($("assignLicModal"));
 const adDisableModal  = new bootstrap.Modal($("adDisableModal"));
 const adEditModal     = new bootstrap.Modal($("adEditModal"));
 const adDeleteModal   = new bootstrap.Modal($("adDeleteModal"));
+const enableModal     = new bootstrap.Modal($("enableModal"));
 const settingsModal   = new bootstrap.Modal($("settingsModal"));
 const toastEl         = new bootstrap.Toast($("toastEl"), { delay: 3500 });
 
@@ -931,6 +978,24 @@ function showAlert(id, msg, type = "danger") {
 }
 
 function hideAlert(id) { $(id).classList.add("d-none"); }
+
+// Convert a <input type="datetime-local"> value (local wall-clock) to UTC ISO.
+function localToUtcIso(v) {
+  if (!v) return "";
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? "" : d.toISOString();
+}
+
+// Queue a create/edit/offboard/enable action for a future time.
+async function postSchedule(taskType, upn, payload, runAtLocal) {
+  const run_at = localToUtcIso(runAtLocal);
+  const r = await fetch("/api/schedule", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ task_type: taskType, upn, run_at, payload }),
+  });
+  return { r, data: await r.json() };
+}
 
 function esc(s) {
   return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
@@ -1413,6 +1478,7 @@ $("btnOnboard").addEventListener("click", () => {
   populateOnboardLicenseSelect();
   $("ob-start").value = "";
   $("ob-contract-end").value = "";
+  $("ob-schedule").value = "";
   $("ob-must-change").checked = true;
   _adEdited.sam = _adEdited.given = _adEdited.sn = _adEdited.display = false;
   ["ob-name", "ob-upn-user", "ob-dept", "ob-title", "ob-manager", "ob-country",
@@ -1467,6 +1533,32 @@ $("btnSubmitOnboard").addEventListener("click", async () => {
   btn.disabled = true;
 
   try {
+    // If a schedule time is set, queue the whole creation for later instead of
+    // running it now. The worker creates the local record + AD account and
+    // queues the license at that time.
+    const schedAt = $("ob-schedule").value;
+    if (schedAt) {
+      const licOptS = $("ob-license").options[$("ob-license").selectedIndex];
+      const payload = {
+        full_name: name, upn, sam, password: pass, given_name: given, surname,
+        display_name: $("ob-display").value.trim() || name,
+        department: $("ob-dept").value.trim(), job_title: $("ob-title").value.trim(),
+        manager: $("ob-manager").value.trim(), location: $("ob-location").value.trim(),
+        license: $("ob-license").value, start_date: $("ob-start").value,
+        ou: $("ob-ou").value, must_change_password: $("ob-must-change").checked,
+        phone: $("ob-phone").value.trim(), mobile: $("ob-mobile").value.trim(),
+        country: $("ob-country").value.trim(), description: $("ob-description").value.trim(),
+        contract_end_date: $("ob-contract-end").value, notes: $("ob-notes").value.trim(),
+        ad_groups: [...document.querySelectorAll(".ob-group-check:checked")].map(cb => cb.value),
+        sku_id: (licOptS?.dataset?.skuId || ""),
+      };
+      const { r: sr, data: sd } = await postSchedule("create_user", upn, payload, schedAt);
+      if (!sr.ok) { showAlert("onboardAlert", sd.error || "Failed to schedule."); return; }
+      onboardModal.hide();
+      showToast(`${name}: ${sd.message}`);
+      return;
+    }
+
     // Step 1: Create local record
     const r = await fetch("/api/users", {
       method: "POST",
@@ -1565,6 +1657,7 @@ function openOffboard(uid, name, upn) {
   $("off-end").classList.remove("is-invalid");
   $("off-reason").value = "";
   $("off-notes").value = "";
+  $("off-schedule").value = "";
   $("off-disable-ad").checked = adConnected;
   $("off-remove-license").checked = graphConnected;
   updateConnBadge("off-ad-badge", adConnected);
@@ -1592,6 +1685,22 @@ $("btnSubmitOffboard").addEventListener("click", async () => {
   $("btnSubmitOffboard").disabled = true;
 
   try {
+    // If scheduled, queue the offboard (local update + optional AD disable) for later.
+    const schedAt = $("off-schedule").value;
+    if (schedAt) {
+      const payload = {
+        uid: Number(uid), end_date: end, ticket,
+        reason: $("off-reason").value, notes: $("off-notes").value.trim(),
+        disable_ad: $("off-disable-ad").checked,
+      };
+      const { r: sr, data: sd } = await postSchedule("offboard_user", upn, payload, schedAt);
+      if (!sr.ok) { showAlert("offboardAlert", sd.error || "Failed to schedule."); return; }
+      offboardModal.hide();
+      showToast(sd.message);
+      loadUsers("active");
+      return;
+    }
+
     // Step 1: Update local record
     const r = await fetch(`/api/users/${uid}/offboard`, {
       method: "POST",
@@ -1705,7 +1814,7 @@ async function loadADUsers() {
           <button class="btn btn-sm btn-outline-primary py-0" onclick="openEditADUser('${esc(upn)}')" title="Edit"><i class="bi bi-pencil"></i></button>
           ${u.Enabled
             ? `<button class="btn btn-sm btn-outline-danger py-0" onclick="openDisableAD('${esc(upn)}')" title="Disable"><i class="bi bi-person-dash"></i></button>`
-            : `<button class="btn btn-sm btn-outline-success py-0" onclick="enableADUser('${esc(upn)}')" title="Enable"><i class="bi bi-person-check"></i></button>`}
+            : `<button class="btn btn-sm btn-outline-success py-0" onclick="openEnableAD('${esc(upn)}')" title="Enable"><i class="bi bi-person-check"></i></button>`}
           ${IS_ADMIN ? `<button class="btn btn-sm btn-outline-danger py-0" onclick="openDeleteAD('${esc(upn)}')" title="Delete from AD"><i class="bi bi-trash"></i></button>` : ""}
         </div>`
           : `<span class="text-muted small" title="No UPN — system account">—</span>`}
@@ -1770,6 +1879,35 @@ async function enableADUser(upn) {
   loadADUsers();
 }
 
+function openEnableAD(upn) {
+  $("enable-upn").value = upn;
+  $("enable-upn-display").textContent = upn;
+  $("enable-schedule").value = "";
+  hideAlert("enableAlert");
+  enableModal.show();
+}
+
+$("btnConfirmEnable").addEventListener("click", async () => {
+  const upn     = $("enable-upn").value;
+  const schedAt = $("enable-schedule").value;
+  const btn     = $("btnConfirmEnable");
+  btn.disabled = true;
+  try {
+    if (schedAt) {
+      const { r, data } = await postSchedule("enable_ad_user", upn, {}, schedAt);
+      if (!r.ok) { showAlert("enableAlert", data.error || "Failed to schedule."); return; }
+      enableModal.hide(); showToast(data.message); loadADUsers();
+      return;
+    }
+    const r = await fetch(`/api/ad/users/${encodeURIComponent(upn)}/enable`, { method: "POST" });
+    const data = await r.json();
+    if (!r.ok) { showAlert("enableAlert", data.error || "Enable failed"); return; }
+    enableModal.hide(); showToast(data.message); loadADUsers();
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 function openDeleteAD(upn) {
   $("adDelete-upn").value = upn;
   $("adDelete-upn-display").textContent = upn;
@@ -1798,6 +1936,7 @@ async function openEditADUser(upn) {
   hideAlert("adEditAlert");
   $("adEdit-upn").value = upn;
   $("adEdit-upn-display").textContent = upn;
+  $("adEdit-schedule").value = "";
   AD_EDIT_FIELDS.forEach(f => $("adEdit-" + f).value = "");
   // UPN local part + suffix dropdown
   const parts = upn.split("@");
@@ -1858,6 +1997,16 @@ $("btnSaveADEdit").addEventListener("click", async () => {
     const newSuffix = $("adEdit-upn-domain").value;
     const newUpn = (local && newSuffix) ? `${local}@${newSuffix}` : "";
     if (newUpn && newUpn !== upn) payload.new_upn = newUpn;
+
+    // If scheduled, queue the edit for later instead of applying now.
+    const schedAt = $("adEdit-schedule").value;
+    if (schedAt) {
+      const { r: sr, data: sd } = await postSchedule("edit_ad_user", upn, payload, schedAt);
+      if (!sr.ok) { showAlert("adEditAlert", sd.error || "Failed to schedule."); return; }
+      adEditModal.hide();
+      showToast(sd.message);
+      return;
+    }
 
     const r = await fetch(`/api/ad/users/${encodeURIComponent(upn)}`, {
       method: "PUT",
