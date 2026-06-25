@@ -108,9 +108,17 @@
     <span class="text-white-50 small" id="graphStatusLabel" title="Microsoft Graph">
       <i class="bi bi-circle-fill conn-dot unk" id="graphDot"></i> Entra-ID
     </span>
-    <span class="text-white-50 small"><i class="bi bi-person-circle me-1"></i>{{ current_user }}</span>
-    <button class="btn btn-sm btn-outline-light" id="btnSettings" title="Settings"><i class="bi bi-gear"></i></button>
-    <a href="/logout" class="btn btn-sm btn-outline-light" title="Sign out"><i class="bi bi-box-arrow-right me-1"></i>Logout</a>
+    <div class="dropdown">
+      <button class="btn btn-sm btn-outline-light dropdown-toggle d-flex align-items-center" type="button"
+              id="profileMenu" data-bs-toggle="dropdown" aria-expanded="false">
+        <i class="bi bi-person-circle me-1"></i>{{ current_user }}
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="profileMenu">
+        <li><button class="dropdown-item" id="btnSettings"><i class="bi bi-gear me-2"></i>Settings</button></li>
+        <li><hr class="dropdown-divider"></li>
+        <li><a class="dropdown-item" href="/logout"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
+      </ul>
+    </div>
   </span>
 </nav>
 
@@ -1519,18 +1527,20 @@ $("btnSubmitOnboard").addEventListener("click", async () => {
       console.warn("AD account creation failed:", adData.error);
     }
 
-    // Step 3: Schedule the M365 license for ~45 min later (after directory sync).
-    // Only when a Graph-backed SKU was picked and Graph is connected.
+    // Step 3: Queue the M365 license. The worker waits for the account to appear
+    // in Entra ID (the sync status shown in the active list) and assigns it then,
+    // retrying until it syncs — so this is queued whenever a Graph-backed SKU was
+    // picked and Graph is connected, independent of the AD-create result above.
     const licOpt = $("ob-license").options[$("ob-license").selectedIndex];
     const skuId  = licOpt?.dataset?.skuId || "";
-    if (adR.ok && skuId && graphConnected) {
+    if (skuId && graphConnected) {
       const schR = await fetch("/api/graph/schedule-license", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ upn, sku_id: skuId }),
       });
       const schData = await schR.json();
-      msgs.push(schR.ok ? "License assignment scheduled (~45 min)." : `License: ${schData.error}`);
+      msgs.push(schR.ok ? "License will be assigned once the user syncs to Entra ID." : `License: ${schData.error}`);
     }
 
     onboardModal.hide();
