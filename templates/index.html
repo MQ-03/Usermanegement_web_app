@@ -30,8 +30,22 @@
 
     .main-card { border: none; border-radius: 14px; box-shadow: 0 2px 16px rgba(0,0,0,.07); }
 
-    .nav-tabs .nav-link { color: #555; border: none; padding: .6rem 1.2rem; }
+    .nav-tabs .nav-link { color: #555; border: none; padding: .6rem 1.2rem; white-space: nowrap; }
     .nav-tabs .nav-link.active { color: var(--brand); font-weight: 600; border-bottom: 2px solid var(--brand); background: transparent; }
+    /* Phones: keep the tabs on one scrollable row instead of an uneven wrapped
+       grid, so the active underline always sits under its tab. */
+    @media (max-width: 575.98px) {
+      #mainTabs {
+        flex: 1 1 100%;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+      }
+      #mainTabs::-webkit-scrollbar { display: none; }
+      #mainTabs .nav-link { flex: 0 0 auto; padding: .5rem .8rem; font-size: .9rem; }
+      #mainTabs .nav-link i { margin-right: .25rem; }
+    }
 
     .table th { font-size: .78rem; text-transform: uppercase; letter-spacing: .6px; color: #888; font-weight: 600; border-top: none; }
     .table td { vertical-align: middle; font-size: .9rem; }
