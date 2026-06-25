@@ -729,6 +729,33 @@ def offboard_user(uid: int) -> Any:
     return jsonify({"message": f"{user['full_name']} has been offboarded"})
 
 
+@app.route("/api/users/<int:uid>/reactivate", methods=["POST"])
+def reactivate_user(uid: int) -> Any:
+    """Move an offboarded local record back to active (re-enable / re-onboard)."""
+    db   = get_db()
+    user = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    if user["status"] == "active":
+        return jsonify({"error": "User is already active"}), 400
+    ts = now_utc()
+    db.execute(
+        """
+        UPDATE users
+           SET status='active', end_date=NULL, updated_at=?
+         WHERE id=?
+        """,
+        (ts, uid),
+    )
+    db.execute(
+        "INSERT INTO audit_log (user_id, full_name, action, details, ticket, actor, timestamp) VALUES (?,?,?,?,?,?,?)",
+        (uid, user["full_name"], "ad_enabled",
+         "Reactivated — moved back to active users", user["ticket"] or "", current_actor(), ts),
+    )
+    db.commit()
+    return jsonify({"message": f"{user['full_name']} has been reactivated"})
+
+
 @app.route("/api/users/<int:uid>", methods=["DELETE"])
 def delete_user(uid: int) -> Any:
     db   = get_db()

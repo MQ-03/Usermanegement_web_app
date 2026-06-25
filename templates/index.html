@@ -222,7 +222,7 @@
           <div class="table-responsive">
             <table class="table table-hover mb-0">
               <thead><tr>
-                <th>Name</th><th>UPN</th><th>Department</th><th>End Date</th><th>Ticket</th><th>Reason</th><th style="width:80px">Actions</th>
+                <th>Name</th><th>UPN</th><th>Department</th><th>End Date</th><th>Ticket</th><th>Reason</th><th style="width:120px">Actions</th>
               </tr></thead>
               <tbody id="tbody-offboarded"></tbody>
             </table>
@@ -804,6 +804,36 @@
 </div>
 
 
+<!-- ===================== REACTIVATE (RE-ENABLE) MODAL ===================== -->
+<div class="modal fade" id="reactivateModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-person-up me-2 text-success"></i>Re-enable User</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="reactivateAlert" class="alert d-none"></div>
+        <p class="mb-3">Re-enable <strong id="reactivate-name-display"></strong> and move them back to the active users list.</p>
+        <input type="hidden" id="reactivate-uid" />
+        <input type="hidden" id="reactivate-upn" />
+        <div class="form-check mb-1">
+          <input class="form-check-input" type="checkbox" id="reactivate-enable-ad" checked />
+          <label class="form-check-label" for="reactivate-enable-ad">
+            Re-enable the AD account <span id="reactivate-ad-badge" class="ms-1"></span>
+          </label>
+        </div>
+        <div class="form-text small">Restores any group memberships removed at offboarding, and the account reappears in the AD Users list as Enabled.</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-success" id="btnConfirmReactivate"><span class="spinner-border spinner-border-sm me-1 d-none" id="reactivateSpinner"></span>Re-enable</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 <!-- ===================== GROUP MEMBERS MODAL ===================== -->
 <div class="modal fade" id="groupModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
@@ -980,6 +1010,7 @@ const adDisableModal  = new bootstrap.Modal($("adDisableModal"));
 const adEditModal     = new bootstrap.Modal($("adEditModal"));
 const adDeleteModal   = new bootstrap.Modal($("adDeleteModal"));
 const enableModal     = new bootstrap.Modal($("enableModal"));
+const reactivateModal = new bootstrap.Modal($("reactivateModal"));
 const reschedModal    = new bootstrap.Modal($("reschedModal"));
 const settingsModal   = new bootstrap.Modal($("settingsModal"));
 const toastEl         = new bootstrap.Toast($("toastEl"), { delay: 3500 });
@@ -1362,6 +1393,7 @@ async function loadUsers(status) {
         <td>${esc(u.reason) || "—"}</td>
         <td>
           <button class="btn btn-sm btn-outline-secondary py-0 me-1" onclick="viewUser(${u.id})" title="View"><i class="bi bi-eye"></i></button>
+          <button class="btn btn-sm btn-outline-success py-0 me-1" onclick="openReactivate(${u.id},'${esc(u.full_name)}','${esc(u.upn)}')" title="Re-enable"><i class="bi bi-person-up"></i></button>
           <button class="btn btn-sm btn-outline-danger py-0" onclick="openDelete(${u.id},'${esc(u.full_name)}')" title="Delete"><i class="bi bi-trash"></i></button>
         </td>`;
     }
@@ -1903,6 +1935,58 @@ $("btnSubmitOffboard").addEventListener("click", async () => {
   } finally {
     spinner.classList.add("d-none");
     $("btnSubmitOffboard").disabled = false;
+  }
+});
+
+// ─── Reactivate (re-enable offboarded user) ───────────────────────────────────
+
+function openReactivate(uid, name, upn) {
+  $("reactivate-uid").value = uid;
+  $("reactivate-upn").value = upn || "";
+  $("reactivate-name-display").textContent = name;
+  const adChk = $("reactivate-enable-ad");
+  adChk.checked = adConnected && !!upn;
+  adChk.disabled = !adConnected || !upn;
+  updateConnBadge("reactivate-ad-badge", adConnected);
+  hideAlert("reactivateAlert");
+  reactivateModal.show();
+}
+
+$("btnConfirmReactivate").addEventListener("click", async () => {
+  hideAlert("reactivateAlert");
+  const uid = $("reactivate-uid").value;
+  const upn = $("reactivate-upn").value;
+  const btn = $("btnConfirmReactivate");
+  const spinner = $("reactivateSpinner");
+  btn.disabled = true;
+  spinner.classList.remove("d-none");
+  try {
+    const msgs = [];
+
+    // Step 1: re-enable the AD account (restores removed groups), reflecting in AD Users.
+    if ($("reactivate-enable-ad").checked && upn) {
+      const adR = await fetch(`/api/ad/users/${encodeURIComponent(upn)}/enable`, { method: "POST" });
+      const adData = await adR.json();
+      if (!adR.ok) {
+        showAlert("reactivateAlert", `AD re-enable failed: ${adData.error || "unknown error"}`);
+        return;
+      }
+      msgs.push(adData.message || "AD account enabled.");
+    }
+
+    // Step 2: move the local record back to active.
+    const r = await fetch(`/api/users/${uid}/reactivate`, { method: "POST" });
+    const data = await r.json();
+    if (!r.ok) { showAlert("reactivateAlert", data.error || "Failed to reactivate user."); return; }
+    msgs.push(data.message);
+
+    reactivateModal.hide();
+    showToast(msgs.join(" "));
+    loadStats();
+    loadUsers("offboarded");
+  } finally {
+    spinner.classList.add("d-none");
+    btn.disabled = false;
   }
 });
 
