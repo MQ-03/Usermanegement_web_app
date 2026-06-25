@@ -26,12 +26,15 @@ Connectivity is shown live in the navbar: **Local-AD** (the agent) and **Entra-I
 
 ## Features
 
-- **Onboarding / offboarding** of users with a local record, on-prem AD account creation, group membership, and scheduled M365 license assignment (after directory sync).
+- **Onboarding / offboarding** of users with a local record, on-prem AD account creation, group membership, and automatic M365 license assignment.
 - **AD management** — search, view, edit, enable/disable, delete users; manage groups and OUs; UPN-suffix management.
-- **Microsoft 365 / Graph** — view subscribed SKUs and per-user licenses, assign/remove licenses, browse M365 groups and members.
+- **Microsoft 365 / Graph** — view subscribed SKUs and per-user licenses, assign/remove licenses, browse M365 groups and members. M365 group members can be added by **UPN or on-prem SAM** (resolved via `onPremisesSamAccountName`).
+- **Entra sync indicator** — the Active Users list shows, per user, whether the account is **Synced** (on-prem → Entra), **cloud-only (Entra)**, or **not yet synced**.
+- **Scheduling** — onboarding, AD edits, offboarding, and re-enabling can each be **run now or queued for a future time** (optional "Schedule for later" on every form). A background worker runs due tasks; a **Scheduled** tab lists their status and lets you **reschedule** or **cancel** pending tasks (and re-queue failed ones).
+- **Smart license assignment** — the license is queued at onboarding and assigned automatically **once the account appears in Entra ID**, retrying until directory sync propagates rather than failing once on a fixed timer.
 - **Audit log** — every action recorded and attributed to the operator; CSV export. **Admin-only.**
 - **Authentication** — Microsoft (Entra) SSO via MSAL, with an optional local admin login fallback. Access can be restricted by user list or group.
-- **Org branding** — admins can upload a logo shown across the portal and on the login page.
+- **Org branding** — admins can upload a logo shown across the portal and on the login page (a "T" gradient favicon is built in).
 
 ---
 
@@ -75,6 +78,10 @@ All configuration is via environment variables (App Settings on Azure; a local `
 | `GRAPH_CLIENT_ID` | for Graph | App registration client ID (needs Graph application permissions + admin consent). |
 | `GRAPH_CLIENT_SECRET` | for Graph | Client secret. |
 | `DEFAULT_USAGE_LOCATION` | — | Default 2-letter ISO country for license assignment (e.g. `GB`). |
+| **Scheduling / license worker** | | |
+| `SYNC_DELAY_MINUTES` | — | First license-assignment attempt after onboarding (default `10`). |
+| `LICENSE_RETRY_MINUTES` | — | Gap between retries while waiting for the account to sync to Entra (default `5`). |
+| `LICENSE_MAX_WAIT_MINUTES` | — | Give up on auto-assignment after this long (default `180`). |
 | **AD agent client** | | |
 | `AD_AGENT_URL` | for AD | Base URL of the on-prem agent, e.g. `https://10.0.0.5:5001`. |
 | `AD_AGENT_KEY` | for AD | Must match the agent's `AGENT_API_KEY`. |
@@ -121,9 +128,10 @@ Deployment is automated via GitHub Actions (`.github/workflows/azure-webapps-pyt
 On the App Service, set the environment variables above under **Settings → Environment variables → App settings**, then **Apply** (restarts the app). App Service auto-detects Flask and runs `gunicorn app:app`.
 
 Recommended:
-- `DATA_DIR=/home/data` so the uploaded logo persists.
+- **Enable "Always On"** (Configuration → General settings). The license assignment and scheduled-action worker run in a background thread; without Always On the app is suspended when idle and **due tasks won't fire**.
+- `DATA_DIR=/home/data` so the uploaded logo persists across restarts/deploys.
 - A fixed `SECRET_KEY`.
-- Allow the App Service outbound IPs in the PostgreSQL firewall.
+- Allow the App Service outbound IPs in the PostgreSQL firewall, and register `AUTH_REDIRECT_URI` under the app registration's **Authentication → Redirect URIs**.
 
 ---
 

@@ -1448,37 +1448,52 @@ def _run_scheduled_task(conn: PGConnection, task: Any) -> None:
         return
 
     upn = task["upn"]
-    # Readiness check — only assign once the account actually exists in Entra ID.
+
+    def _requeue(reason: str) -> bool:
+        """Re-queue the task for a short retry if still within the wait window.
+        Returns False once the cap is exceeded (caller should mark it failed)."""
+        if _minutes_since(task["created_at"] or ts, ts) >= LICENSE_MAX_WAIT_MINUTES:
+            return False
+        next_run = (datetime.utcnow() + timedelta(minutes=LICENSE_RETRY_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute(
+            "UPDATE scheduled_tasks SET status='pending', run_at=?, result=? WHERE id=?",
+            (next_run, f"{reason} — retry at {next_run} UTC", task["id"]),
+        )
+        conn.commit()
+        return True
+
+    # 1) Readiness — only assign once the account actually exists in Entra ID.
     try:
         user_id = _graph.get_user_id(upn)
     except Exception:
         user_id = None
-
     if not user_id:
-        # Not synced yet. Re-queue for a short retry until it appears, up to a
-        # cap — so the license lands automatically once delta sync propagates.
-        waited = _minutes_since(task["created_at"] or ts, ts)
-        if waited < LICENSE_MAX_WAIT_MINUTES:
-            next_run = (datetime.utcnow() + timedelta(minutes=LICENSE_RETRY_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
-            conn.execute(
-                "UPDATE scheduled_tasks SET status='pending', run_at=?, result=? WHERE id=?",
-                (next_run, f"Waiting for {upn} in Entra ID — retry at {next_run} UTC", task["id"]),
-            )
-            conn.commit()
-        else:
+        if not _requeue(f"Waiting for {upn} to sync to Entra ID"):
             _finish_task(conn, task, "failed",
-                         f"{upn} did not appear in Entra ID within {LICENSE_MAX_WAIT_MINUTES} min", ts)
+                         f"{upn} did not appear in Entra ID within {LICENSE_MAX_WAIT_MINUTES} min "
+                         f"— check the AD account was created and AD Connect sync is healthy", ts)
         return
 
-    # Account exists — assign the license.
+    # 2) usageLocation is mandatory for assignLicense and won't fix itself — fail
+    #    fast with an actionable message rather than retrying for hours.
+    loc = usage_location_for(upn, conn)
+    if not loc:
+        _finish_task(conn, task, "failed",
+                     f"No usageLocation for {upn}: set the user's country (2-letter ISO) "
+                     f"or DEFAULT_USAGE_LOCATION, then reschedule from the Scheduled tab", ts)
+        return
+
+    # 3) Assign. Errors right after sync are often transient (the directory object
+    #    isn't fully provisioned yet), so retry within the window instead of giving
+    #    up on the first failure; only fail for good once the cap is reached.
     try:
-        loc = usage_location_for(upn, conn)
-        if loc:
-            _graph.set_usage_location(upn, loc)
+        _graph.set_usage_location(upn, loc)
         _graph.assign_license(upn, task["payload"])
         _finish_task(conn, task, "done", f"License {task['payload']} assigned to {upn}", ts)
     except Exception as exc:
-        _finish_task(conn, task, "failed", str(exc)[:250], ts)
+        msg = str(exc)[:180]
+        if not _requeue(f"Assign failed ({msg})"):
+            _finish_task(conn, task, "failed", f"Assignment failed for {upn}: {msg}", ts)
 
 
 def _scheduler_loop() -> None:
