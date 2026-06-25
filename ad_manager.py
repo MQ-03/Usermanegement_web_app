@@ -113,8 +113,8 @@ class ADManager:
         description: str = "", contract_end_date: str = "",
         email: str = "", manager: str = "", display_name: str = "",
         ad_groups: list[str] | None = None,
-    ) -> None:
-        self._post("/ad/users", {
+    ) -> dict:
+        return self._post("/ad/users", {
             "full_name": full_name, "upn": upn, "sam": sam,
             "display_name": display_name, "given_name": given_name, "surname": surname,
             "password": password, "department": department,

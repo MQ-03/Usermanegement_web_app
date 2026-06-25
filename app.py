@@ -818,7 +818,7 @@ def ad_create_user() -> Any:
     if missing:
         return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
     try:
-        _ad.create_user(
+        res = _ad.create_user(
             full_name=data["full_name"].strip(),
             upn=data["upn"].strip(),
             sam=data["sam"].strip(),
@@ -839,8 +839,10 @@ def ad_create_user() -> Any:
             email=data.get("email", ""),
             ad_groups=data.get("ad_groups", []),
         )
-        log_audit("ad_created", data["upn"].strip(), f"AD account created (SAM {data['sam'].strip()})")
-        return jsonify({"message": f"AD account created for {data['upn']}"}), 201
+        sync = (res or {}).get("delta_sync", "unknown")
+        log_audit("ad_created", data["upn"].strip(),
+                  f"AD account created (SAM {data['sam'].strip()}); delta sync: {sync}")
+        return jsonify({"message": f"AD account created for {data['upn']}", "delta_sync": sync}), 201
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -1328,7 +1330,7 @@ def _sched_create_user(conn: PGConnection, p: dict) -> str:
 
     note = "local record created"
     if _ad is not None:
-        _ad.create_user(
+        res = _ad.create_user(
             full_name=full_name, upn=upn, sam=(p.get("sam") or "").strip(),
             display_name=(p.get("display_name") or full_name).strip(),
             given_name=(p.get("given_name") or "").strip(),
@@ -1342,7 +1344,7 @@ def _sched_create_user(conn: PGConnection, p: dict) -> str:
             contract_end_date=p.get("contract_end_date", ""),
             email=p.get("upn", ""), ad_groups=p.get("ad_groups", []),
         )
-        note += "; AD account created"
+        note += f"; AD account created (delta sync: {(res or {}).get('delta_sync', 'unknown')})"
 
     sku = (p.get("sku_id") or "").strip()
     if sku and _graph is not None:

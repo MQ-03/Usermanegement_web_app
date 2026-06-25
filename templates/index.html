@@ -1755,7 +1755,12 @@ $("btnSubmitOnboard").addEventListener("click", async () => {
     // raw AD agent error (e.g. "AD agent returned HTTP 400"); log it for debugging.
     if (adR.ok) {
       const grpText = selectedGroups.length ? ` Added to ${selectedGroups.length} group(s).` : "";
-      msgs.push(`AD account created.${grpText}`);
+      const sync = adData.delta_sync;
+      const syncText = sync === "started" ? " Entra delta sync triggered."
+                     : sync === "disabled" ? " (Delta sync disabled.)"
+                     : (sync && sync.startsWith("error")) ? ` (Delta sync not triggered: ${sync.slice(7)})`
+                     : "";
+      msgs.push(`AD account created.${grpText}${syncText}`);
     } else {
       console.warn("AD account creation failed:", adData.error);
     }

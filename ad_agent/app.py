@@ -315,19 +315,24 @@ foreach ($g in $groups) {
     try { Add-ADGroupMember -Identity $g -Members $env:AD_SAM -ErrorAction Stop } catch {}
 }
 
-# Kick off an Azure AD Connect delta sync (best-effort; ignored if ADSync is absent
-# or a cycle is already running). Runs remotely if ADSYNC_SERVER is set.
+# Kick off an Azure AD Connect delta sync (best-effort). Emit an ADSYNC: status
+# token on stdout so the caller can report whether the sync actually fired.
 if ($env:ADSYNC_ENABLED -eq 'True') {
     try {
         if ($env:ADSYNC_SERVER) {
             Invoke-Command -ComputerName $env:ADSYNC_SERVER -ScriptBlock {
-                Start-ADSyncSyncCycle -PolicyType Delta
+                Start-ADSyncSyncCycle -PolicyType Delta | Out-Null
             } -ErrorAction Stop
         } else {
             Import-Module ADSync -ErrorAction Stop
-            Start-ADSyncSyncCycle -PolicyType Delta -ErrorAction Stop
+            Start-ADSyncSyncCycle -PolicyType Delta -ErrorAction Stop | Out-Null
         }
-    } catch {}
+        Write-Output "ADSYNC:started"
+    } catch {
+        Write-Output ("ADSYNC:error:" + $_.Exception.Message)
+    }
+} else {
+    Write-Output "ADSYNC:disabled"
 }
 """, {
         "AD_NAME":        str(data["full_name"]).strip(),
@@ -357,7 +362,20 @@ if ($env:ADSYNC_ENABLED -eq 'True') {
         # blank message that the client renders as a bare "400 Client Error".
         detail = err or out or f"New-ADUser failed (exit {rc}) with no error output"
         return jsonify({"error": detail}), 400
-    return jsonify({"message": f"AD account created for {data['upn']}"}), 201
+    # Report whether the delta sync fired (parsed from the ADSYNC: status token).
+    sync = "unknown"
+    for ln in (out or "").splitlines():
+        ln = ln.strip()
+        if ln.startswith("ADSYNC:"):
+            tok = ln[len("ADSYNC:"):]
+            if tok.startswith("started"):
+                sync = "started"
+            elif tok == "disabled":
+                sync = "disabled"
+            elif tok.startswith("error:"):
+                sync = "error: " + tok[len("error:"):].strip()[:160]
+            break
+    return jsonify({"message": f"AD account created for {data['upn']}", "delta_sync": sync}), 201
 
 
 @app.route("/ad/users/<string:upn>", methods=["PUT"])
