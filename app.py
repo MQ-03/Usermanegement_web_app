@@ -1159,6 +1159,62 @@ def schedule_action() -> Any:
     return jsonify({"message": f"Action scheduled for {run_at} UTC", "run_at": run_at}), 201
 
 
+@app.route("/api/scheduled")
+def list_scheduled() -> Any:
+    """All scheduled tasks — pending/running first, then recently completed."""
+    rows = get_db().execute(
+        "SELECT id, task_type, upn, run_at, status, result, created_at, completed_at"
+        " FROM scheduled_tasks"
+        " ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'running' THEN 1 ELSE 2 END,"
+        "          run_at DESC"
+        " LIMIT 200"
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/scheduled/<int:tid>", methods=["PATCH"])
+def reschedule_task(tid: int) -> Any:
+    """Change a task's run time. A pending task is rescheduled; a failed one is
+    re-queued (set back to pending) so it runs again at the new time."""
+    data   = request.get_json(force=True) or {}
+    run_at = _parse_iso_utc(data.get("run_at", ""))
+    if not run_at:
+        return jsonify({"error": "A valid run_at (UTC ISO) is required"}), 400
+    db  = get_db()
+    row = db.execute("SELECT status FROM scheduled_tasks WHERE id=?", (tid,)).fetchone()
+    if not row:
+        return jsonify({"error": "Scheduled task not found"}), 404
+    if row["status"] == "running":
+        return jsonify({"error": "Task is currently running"}), 409
+    if row["status"] not in ("pending", "failed", "cancelled"):
+        return jsonify({"error": f"Cannot reschedule a '{row['status']}' task"}), 409
+    db.execute(
+        "UPDATE scheduled_tasks SET run_at=?, status='pending', result='', completed_at='' WHERE id=?",
+        (run_at, tid),
+    )
+    db.commit()
+    log_audit("schedule_updated", str(tid), f"Rescheduled task #{tid} to {run_at} UTC")
+    return jsonify({"message": f"Rescheduled to {run_at} UTC", "run_at": run_at})
+
+
+@app.route("/api/scheduled/<int:tid>", methods=["DELETE"])
+def cancel_task(tid: int) -> Any:
+    """Cancel a pending task so the worker no longer picks it up."""
+    db  = get_db()
+    row = db.execute("SELECT status FROM scheduled_tasks WHERE id=?", (tid,)).fetchone()
+    if not row:
+        return jsonify({"error": "Scheduled task not found"}), 404
+    if row["status"] != "pending":
+        return jsonify({"error": f"Only pending tasks can be cancelled (this is '{row['status']}')"}), 409
+    db.execute(
+        "UPDATE scheduled_tasks SET status='cancelled', completed_at=? WHERE id=?",
+        (now_utc(), tid),
+    )
+    db.commit()
+    log_audit("schedule_cancelled", str(tid), f"Cancelled scheduled task #{tid}")
+    return jsonify({"message": "Scheduled task cancelled"})
+
+
 @app.route("/api/graph/users/<string:upn>/licenses/<string:sku_id>", methods=["DELETE"])
 def graph_remove_license(upn: str, sku_id: str) -> Any:
     if _graph is None:

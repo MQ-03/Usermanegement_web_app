@@ -172,6 +172,7 @@
           <li class="nav-item"><button class="nav-link" data-tab="adusers"><i class="bi bi-server me-1"></i>AD Users</button></li>
           <li class="nav-item"><button class="nav-link" data-tab="groups"><i class="bi bi-collection me-1"></i>Groups</button></li>
           <li class="nav-item"><button class="nav-link" data-tab="licenses"><i class="bi bi-key me-1"></i>Licenses</button></li>
+          <li class="nav-item"><button class="nav-link" data-tab="scheduled"><i class="bi bi-clock-history me-1"></i>Scheduled</button></li>
           {% if is_admin %}
           <li class="nav-item"><button class="nav-link" data-tab="audit"><i class="bi bi-journal-text me-1"></i>Audit</button></li>
           {% endif %}
@@ -312,6 +313,28 @@
             </div>
             <div class="empty-state d-none" id="empty-licenses"><i class="bi bi-key"></i>No users found.</div>
           </div>
+        </div>
+
+        <!-- Scheduled Tasks -->
+        <div id="pane-scheduled" class="d-none">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0 fw-semibold text-muted">Scheduled & recent actions</h6>
+            <button class="btn btn-outline-secondary btn-sm" onclick="loadScheduled()"><i class="bi bi-arrow-clockwise"></i></button>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead><tr>
+                <th style="white-space:nowrap">When (UTC)</th>
+                <th>Action</th>
+                <th>Target</th>
+                <th>Status</th>
+                <th>Detail</th>
+                <th style="width:130px">Manage</th>
+              </tr></thead>
+              <tbody id="tbody-scheduled"></tbody>
+            </table>
+          </div>
+          <div class="empty-state d-none" id="empty-scheduled"><i class="bi bi-clock-history"></i>No scheduled tasks.</div>
         </div>
 
         <!-- Audit Log -->
@@ -718,6 +741,30 @@
 </div>
 
 
+<!-- ===================== RESCHEDULE MODAL ===================== -->
+<div class="modal fade" id="reschedModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-clock me-2 text-primary"></i>Reschedule Task</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="reschedAlert" class="alert d-none"></div>
+        <input type="hidden" id="resched-id" />
+        <label class="form-label small mb-1">New run time</label>
+        <input type="datetime-local" id="resched-when" class="form-control form-control-sm" />
+        <div class="form-text small">Time is in your local timezone. A failed task will be re-queued to run again.</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" id="btnConfirmResched">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 <!-- ===================== RE-ENABLE MODAL ===================== -->
 <div class="modal fade" id="enableModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered">
@@ -919,6 +966,7 @@ const adDisableModal  = new bootstrap.Modal($("adDisableModal"));
 const adEditModal     = new bootstrap.Modal($("adEditModal"));
 const adDeleteModal   = new bootstrap.Modal($("adDeleteModal"));
 const enableModal     = new bootstrap.Modal($("enableModal"));
+const reschedModal    = new bootstrap.Modal($("reschedModal"));
 const settingsModal   = new bootstrap.Modal($("settingsModal"));
 const toastEl         = new bootstrap.Toast($("toastEl"), { delay: 3500 });
 
@@ -1212,7 +1260,7 @@ async function loadStats() {
 // ─── Tabs ────────────────────────────────────────────────────────────────────
 
 let currentTab = "active";
-const ALL_PANES = ["active", "offboarded", "adusers", "groups", "licenses", "audit"];
+const ALL_PANES = ["active", "offboarded", "adusers", "groups", "licenses", "scheduled", "audit"];
 
 document.querySelectorAll("#mainTabs button").forEach(btn => {
   btn.addEventListener("click", () => {
@@ -1236,7 +1284,8 @@ function loadCurrentTab() {
   else if (currentTab === "adusers") loadADUsers();
   else if (currentTab === "groups") loadCurrentGroupTab();
   else if (currentTab === "licenses") loadLicenses();
-  else loadAudit();
+  else if (currentTab === "scheduled") loadScheduled();
+  else if (currentTab === "audit") loadAudit();
 }
 
 // ─── Group Sub-Tabs ───────────────────────────────────────────────────────────
@@ -1359,6 +1408,98 @@ async function loadAudit() {
     tbody.appendChild(tr);
   });
 }
+
+// ─── Scheduled tasks ───────────────────────────────────────────────────────────
+
+const SCHED_LABELS = {
+  create_user: "Create user", edit_ad_user: "Edit AD user", offboard_user: "Offboard",
+  enable_ad_user: "Re-enable", assign_license: "Assign license",
+};
+
+function schedStatusBadge(s) {
+  const map = {
+    pending:   ["bg-warning-subtle text-warning", "Pending"],
+    running:   ["bg-info-subtle text-info", "Running"],
+    done:      ["badge-active", "Done"],
+    failed:    ["bg-danger-subtle text-danger", "Failed"],
+    cancelled: ["bg-secondary-subtle text-secondary", "Cancelled"],
+  };
+  const [cls, txt] = map[s] || ["bg-secondary-subtle text-secondary", s];
+  return `<span class="badge ${cls} rounded-pill px-2">${esc(txt)}</span>`;
+}
+
+// "YYYY-MM-DD HH:MM:SS" (UTC) → local "YYYY-MM-DDTHH:MM" for a datetime-local input.
+function utcToLocalInput(utc) {
+  if (!utc) return "";
+  const d = new Date(utc.replace(" ", "T") + "Z");
+  if (isNaN(d.getTime())) return "";
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+async function loadScheduled() {
+  const tbody = $("tbody-scheduled");
+  const empty = $("empty-scheduled");
+  tbody.innerHTML = "";
+  let rows = [];
+  try {
+    const r = await fetch("/api/scheduled");
+    rows = await r.json();
+    if (!r.ok) { showToast((rows && rows.error) || "Failed to load scheduled tasks", false); rows = []; }
+  } catch { rows = []; }
+  if (!Array.isArray(rows) || !rows.length) { empty.classList.remove("d-none"); return; }
+  empty.classList.add("d-none");
+  rows.forEach(t => {
+    const label = SCHED_LABELS[t.task_type] || t.task_type;
+    const canCancel     = t.status === "pending";
+    const canReschedule = t.status === "pending" || t.status === "failed";
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="text-muted small" style="white-space:nowrap">${esc(t.run_at)}</td>
+      <td>${esc(label)}</td>
+      <td class="text-muted small">${esc(t.upn) || "—"}</td>
+      <td>${schedStatusBadge(t.status)}</td>
+      <td class="small">${esc(t.result) || "—"}</td>
+      <td style="white-space:nowrap">
+        ${canReschedule ? `<button class="btn btn-sm btn-outline-primary py-0 me-1" onclick="openReschedule(${t.id},'${esc(t.run_at)}')" title="Reschedule"><i class="bi bi-clock"></i></button>` : ""}
+        ${canCancel ? `<button class="btn btn-sm btn-outline-danger py-0" onclick="cancelScheduled(${t.id})" title="Cancel"><i class="bi bi-x-circle"></i></button>` : ""}
+        ${(!canReschedule && !canCancel) ? `<span class="text-muted small">—</span>` : ""}
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function cancelScheduled(id) {
+  if (!confirm("Cancel this scheduled task?")) return;
+  const r = await fetch(`/api/scheduled/${id}`, { method: "DELETE" });
+  const data = await r.json();
+  if (!r.ok) { showToast(data.error || "Cancel failed", false); return; }
+  showToast(data.message);
+  loadScheduled();
+}
+
+function openReschedule(id, runAtUtc) {
+  $("resched-id").value = id;
+  $("resched-when").value = utcToLocalInput(runAtUtc);
+  hideAlert("reschedAlert");
+  reschedModal.show();
+}
+
+$("btnConfirmResched").addEventListener("click", async () => {
+  const id   = $("resched-id").value;
+  const when = $("resched-when").value;
+  if (!when) { showAlert("reschedAlert", "Pick a date and time."); return; }
+  const r = await fetch(`/api/scheduled/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ run_at: localToUtcIso(when) }),
+  });
+  const data = await r.json();
+  if (!r.ok) { showAlert("reschedAlert", data.error || "Reschedule failed"); return; }
+  reschedModal.hide();
+  showToast(data.message);
+  loadScheduled();
+});
 
 // ─── View User ───────────────────────────────────────────────────────────────
 
