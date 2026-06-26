@@ -76,6 +76,15 @@
     .empty-state { padding: 3rem 0; text-align: center; color: #aaa; }
     .empty-state i { font-size: 2.5rem; display: block; margin-bottom: .5rem; }
 
+    /* Row action buttons: evenly-sized square icon buttons in a tidy row. */
+    .row-actions { display: inline-flex; gap: .35rem; }
+    .row-actions .btn {
+      width: 30px; height: 30px; padding: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      line-height: 1; border-radius: 6px;
+    }
+    .row-actions .btn i { font-size: .9rem; }
+
     .conn-dot { font-size: .55rem; vertical-align: middle; }
     .conn-dot.ok   { color: #4ade80; }
     .conn-dot.fail { color: #f87171; }
@@ -1380,8 +1389,10 @@ async function loadUsers(status) {
         <td><span class="badge badge-active rounded-pill px-2">Active</span></td>
         <td id="entra-${u.id}"><span class="text-muted small">…</span></td>
         <td>
-          <button class="btn btn-sm btn-outline-secondary py-0 me-1" onclick="viewUser(${u.id})" title="View"><i class="bi bi-eye"></i></button>
-          <button class="btn btn-sm btn-outline-danger py-0" onclick="openOffboard(${u.id},'${esc(u.full_name)}','${esc(u.upn)}')" title="Offboard"><i class="bi bi-person-dash"></i></button>
+          <div class="row-actions">
+            <button class="btn btn-sm btn-outline-secondary" onclick="viewUser(${u.id})" title="View"><i class="bi bi-eye"></i></button>
+            <button class="btn btn-sm btn-outline-danger" onclick="openOffboard(${u.id},'${esc(u.full_name)}','${esc(u.upn)}')" title="Offboard"><i class="bi bi-person-dash"></i></button>
+          </div>
         </td>`;
     } else {
       tr.innerHTML = `
@@ -1392,9 +1403,11 @@ async function loadUsers(status) {
         <td>${esc(u.ticket) || "—"}</td>
         <td>${esc(u.reason) || "—"}</td>
         <td>
-          <button class="btn btn-sm btn-outline-secondary py-0 me-1" onclick="viewUser(${u.id})" title="View"><i class="bi bi-eye"></i></button>
-          <button class="btn btn-sm btn-outline-success py-0 me-1" onclick="openReactivate(${u.id},'${esc(u.full_name)}','${esc(u.upn)}')" title="Re-enable"><i class="bi bi-person-up"></i></button>
-          <button class="btn btn-sm btn-outline-danger py-0" onclick="openDelete(${u.id},'${esc(u.full_name)}')" title="Delete"><i class="bi bi-trash"></i></button>
+          <div class="row-actions">
+            <button class="btn btn-sm btn-outline-secondary" onclick="viewUser(${u.id})" title="View"><i class="bi bi-eye"></i></button>
+            <button class="btn btn-sm btn-outline-success" onclick="openReactivate(${u.id},'${esc(u.full_name)}','${esc(u.upn)}')" title="Re-enable"><i class="bi bi-person-up"></i></button>
+            <button class="btn btn-sm btn-outline-danger" onclick="openDelete(${u.id},'${esc(u.full_name)}')" title="Delete"><i class="bi bi-trash"></i></button>
+          </div>
         </td>`;
     }
     tbody.appendChild(tr);
