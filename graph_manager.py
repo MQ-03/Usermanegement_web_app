@@ -93,11 +93,14 @@ class GraphManager:
     # ── Licenses ────────────────────────────────────────────────────────────────
 
     def get_licenses(self) -> list[dict]:
-        """Return all subscribed SKUs with usage counts."""
-        data = self._get(
-            "subscribedSkus"
-            "?$select=skuId,skuPartNumber,capabilityStatus,consumedUnits,prepaidUnits"
-        )
+        """Return all subscribed SKUs with usage counts.
+
+        NOTE: the subscribedSkus endpoint is unreliable with $select — it can
+        return identity fields (skuId/skuPartNumber) while dropping the complex
+        prepaidUnits/consumedUnits objects, which shows up as "0 total / 0%".
+        Fetch the full objects instead.
+        """
+        data = self._get("subscribedSkus")
         return data.get("value", [])
 
     def get_user_licenses(self, upn: str) -> list[dict]:
