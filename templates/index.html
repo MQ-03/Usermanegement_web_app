@@ -2565,14 +2565,20 @@ async function loadLicenses() {
     } else if (!skus.length) {
       cards.innerHTML = `<div class="col-12"><div class="text-muted small">No subscribed SKUs found.</div></div>`;
     } else {
+      console.log("[licenses] raw SKU sample:", skus[0]);
       skus.forEach(sku => {
-        const used  = sku.consumedUnits ?? 0;
-        const total = sku.prepaidUnits?.enabled ?? 0;
+        const pre   = sku.prepaidUnits || {};
+        const used  = Number(sku.consumedUnits ?? 0) || 0;
+        const total = Number(pre.enabled ?? pre.total ?? sku.prepaidUnits ?? 0) || 0;
         const pct   = total > 0 ? Math.round((used / total) * 100) : 0;
+        // If counts are missing, expose the keys Graph actually returned so we can see why.
+        const debug = (total === 0 && used === 0)
+          ? ` title="No usage fields in response. Keys: ${esc(Object.keys(sku).join(', '))}"`
+          : "";
         const col = document.createElement("div");
         col.className = "col-6 col-md-3";
         col.innerHTML = `
-          <div class="license-card card p-3">
+          <div class="license-card card p-3"${debug}>
             <div class="fw-semibold small mb-1">${esc(sku.skuPartNumber)}</div>
             <div class="d-flex justify-content-between text-muted small mb-1">
               <span>${used} used</span><span>${total} total</span>
