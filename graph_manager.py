@@ -104,7 +104,8 @@ class GraphManager:
         return data.get("value", [])
 
     def get_user_licenses(self, upn: str) -> list[dict]:
-        data = self._get(f"users/{upn}/licenseDetails?$select=id,skuId,skuPartNumber")
+        # No $select — same reliability quirk as subscribedSkus; fetch full objects.
+        data = self._get(f"users/{upn}/licenseDetails")
         return data.get("value", [])
 
     def set_usage_location(self, upn: str, code: str) -> None:

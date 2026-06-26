@@ -330,7 +330,7 @@
             <h6 class="fw-semibold text-muted mb-2">User License Assignments</h6>
             <div class="table-responsive">
               <table class="table table-hover mb-0">
-                <thead><tr><th>User</th><th>UPN</th><th>License (local record)</th><th>Graph Licenses</th><th style="width:120px">Actions</th></tr></thead>
+                <thead><tr><th>User</th><th>UPN</th><th>License (local record)</th><th>Cloud Licenses</th><th style="width:120px">Actions</th></tr></thead>
                 <tbody id="tbody-licenses"></tbody>
               </table>
             </div>
@@ -1256,7 +1256,12 @@ async function loadSkuOptions() {
   try {
     const r = await fetch("/api/graph/licenses");
     const skus = await r.json();
-    availableSkus = Array.isArray(skus) ? skus.filter(s => s.capabilityStatus === "Enabled") : [];
+    // Show every assignable SKU. "Enabled" and "Warning" (recently added / in
+    // grace period) can be assigned; only "Suspended"/"Deleted" cannot.
+    const ASSIGNABLE = ["Enabled", "Warning"];
+    availableSkus = Array.isArray(skus)
+      ? skus.filter(s => ASSIGNABLE.includes(s.capabilityStatus))
+      : [];
     populateSkuSelect("licSkuSelect");
     populateOnboardLicenseSelect();
   } catch { /* silent */ }
