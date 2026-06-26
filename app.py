@@ -379,6 +379,12 @@ def init_db() -> None:
                 updated_at  TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS offboarded_licenses (
+                upn        TEXT PRIMARY KEY,
+                skus_json  TEXT NOT NULL DEFAULT '[]',
+                updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS settings (
                 key   TEXT PRIMARY KEY,
                 value TEXT DEFAULT ''
@@ -732,13 +738,16 @@ def offboard_user(uid: int) -> Any:
 @app.route("/api/users/<int:uid>/reactivate", methods=["POST"])
 def reactivate_user(uid: int) -> Any:
     """Move an offboarded local record back to active (re-enable / re-onboard)."""
+    data     = request.get_json(silent=True) or {}
+    reassign = data.get("reassign_licenses", True)
     db   = get_db()
     user = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
     if not user:
         return jsonify({"error": "User not found"}), 404
     if user["status"] == "active":
         return jsonify({"error": "User is already active"}), 400
-    ts = now_utc()
+    ts  = now_utc()
+    upn = user["upn"] or ""
     db.execute(
         """
         UPDATE users
@@ -752,8 +761,35 @@ def reactivate_user(uid: int) -> Any:
         (uid, user["full_name"], "ad_enabled",
          "Reactivated — moved back to active users", user["ticket"] or "", current_actor(), ts),
     )
+
+    # Re-assign the M365 licenses that were removed at offboarding.
+    assigned, failed = [], []
+    row  = db.execute("SELECT skus_json FROM offboarded_licenses WHERE upn=?", (upn,)).fetchone()
+    skus = json.loads(row["skus_json"]) if row else []
+    if reassign and skus and _graph is not None and upn:
+        loc = usage_location_for(upn, db)
+        if loc:
+            try:
+                _graph.set_usage_location(upn, loc)
+            except Exception:
+                pass
+        for sku in skus:
+            try:
+                _graph.assign_license(upn, sku)
+                assigned.append(sku)
+            except Exception:
+                failed.append(sku)
+        db.execute("DELETE FROM offboarded_licenses WHERE upn=?", (upn,))
     db.commit()
-    return jsonify({"message": f"{user['full_name']} has been reactivated"})
+    if assigned:
+        log_audit("license_assigned", upn, f"Re-assigned {len(assigned)} license(s) on re-enable")
+
+    msg = f"{user['full_name']} has been reactivated"
+    if assigned:
+        msg += f" — {len(assigned)} license(s) re-assigned"
+    if failed:
+        msg += f" ({len(failed)} license(s) could not be re-assigned — assign manually)"
+    return jsonify({"message": msg, "licenses_assigned": len(assigned), "licenses_failed": len(failed)})
 
 
 @app.route("/api/users/<int:uid>", methods=["DELETE"])
@@ -1254,6 +1290,32 @@ def graph_remove_license(upn: str, sku_id: str) -> Any:
         return jsonify({"message": f"License removed from {upn}"})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/graph/users/<string:upn>/licenses/remember", methods=["POST"])
+def remember_offboard_licenses(upn: str) -> Any:
+    """Persist the SKUs being removed at offboarding so they can be re-assigned on re-enable."""
+    data = request.get_json(force=True) or {}
+    skus = [s for s in (data.get("skus") or []) if s]
+    db = get_db()
+    if skus:
+        db.execute(
+            "INSERT INTO offboarded_licenses (upn, skus_json, updated_at) VALUES (?,?,?)"
+            " ON CONFLICT (upn) DO UPDATE SET"
+            " skus_json=EXCLUDED.skus_json, updated_at=EXCLUDED.updated_at",
+            (upn, json.dumps(skus), now_utc()),
+        )
+        db.commit()
+    return jsonify({"remembered": len(skus)})
+
+
+@app.route("/api/graph/users/<string:upn>/licenses/remembered")
+def get_remembered_licenses(upn: str) -> Any:
+    """The SKUs removed when this user was offboarded (for re-assign on re-enable)."""
+    db  = get_db()
+    row = db.execute("SELECT skus_json FROM offboarded_licenses WHERE upn=?", (upn,)).fetchone()
+    skus = json.loads(row["skus_json"]) if row else []
+    return jsonify({"skus": skus})
 
 
 # ── Graph — Groups ──────────────────────────────────────────────────────────────
