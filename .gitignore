@@ -1,0 +1,23 @@
+# Secrets & local data — never commit
+.env
+*.db
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+umenv/
+myenv
+
+# Uploaded branding / runtime data
+branding/
+static/branding/
+ad_agent/logs/
+
+# OS / editor / tooling
+.DS_Store
+.vscode/
+.idea/
+.claude/
